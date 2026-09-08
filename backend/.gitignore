@@ -15,7 +15,7 @@ test.db
 log.txt
 Pipfile.lock
 env3.*
-env
+.env
 docs_build
 site_build
 venv
@@ -31,3 +31,32 @@ archive.zip
 .DS_Store
 
 .codspeed
+
+# ===== Secrets / Credentials =====
+.env
+.env.*
+!.env.example
+*.pem
+*.ppk
+*.key
+
+# ===== Python =====
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+env/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# ===== IDE / Editor =====
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# ===== Logs =====
+*.log
