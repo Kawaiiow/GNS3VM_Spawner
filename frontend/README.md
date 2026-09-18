@@ -1,37 +1,49 @@
-# How to frontend
+# Frontend
 
-## Go to frontend directory
+## Getting Started
 
-```
+### 1. Go to the frontend directory
+
+```bash
 cd frontend
 ```
 
-## Create virtual environment
+### 2. Create a virtual environment
 
-```
-python -m venv .venv 
+```bash
+python -m venv .venv
 ```
 
-# Install dependencies
+Activate it:
 
+```bash
+# macOS / Linux
+source .venv/bin/activate
+
+# Windows
+.venv\Scripts\activate
 ```
+
+### 3. Install dependencies
+
+```bash
 pip install -r requirements.txt
 ```
 
-## Go to app directory
+### 4. Go to the app directory
 
-```
+```bash
 cd app
 ```
 
-## Run frontend
+### 5. Run the frontend
+
+```bash
+uvicorn main:app --port 80 --reload
+```
+
+### 6. Open in browser
 
 ```
-uvicorn main:app --reload
-```
-
-## Open in browser
-
-```
-localhost:8000
+http://localhost
 ```
