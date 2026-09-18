@@ -1,35 +1,32 @@
 from fastapi import FastAPI, Request
-from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 app = FastAPI()
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-templates = Jinja2Templates(directory="templates")
+template = Jinja2Templates(directory="template")
 
 @app.get("/")
-def redirect_to_home():
-    return RedirectResponse(url="/home")
-
-@app.get("/home")
 def render_home(request: Request):
-    return templates.TemplateResponse(
+    return template.TemplateResponse(
         request=request, 
         name="home.html"
     )
-    
+
 @app.get("/signin")
 def render_signin(request: Request):
-    return templates.TemplateResponse(
+    return template.TemplateResponse(
         request=request, 
         name="signin.html"
     )
 
-@app.get("/{full_path:path}")
+@app.get("/{path:path}")
 def catch_all(request: Request):
-    return templates.TemplateResponse(
+    return template.TemplateResponse(
         request=request, 
         name="notfound.html"
     )
+
+# start frontend
+# uvicorn main:app --reload
+# localhost:8000
