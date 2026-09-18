@@ -28,7 +28,3 @@ def catch_all(request: Request):
         request=request, 
         name="notfound.html"
     )
-
-# start frontend
-# uvicorn main:app --reload
-# localhost:8000
