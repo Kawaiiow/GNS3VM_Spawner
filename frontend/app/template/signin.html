@@ -5,27 +5,28 @@
     <title>ลงชื่อเข้าใช้ - NetLab</title>
 </head>
 <body class="bg-white">
-    <div class="flex items-center justify-center p-6 min-h-screen">
-        <div class="w-full max-w-md">
-            <a href="/" class="text-sm text-gray-600 mb-6 inline-block"><-- ย้อนกลับ</a>
-            <div class="text-center mb-8">
-                <img src="../static/image/netlab_logo.png" class="h-20 mx-auto">
+    {% include "component/navbar.html" %}
+    <div class="flex items-center justify-center min-h-screen">
+        <div class="border shadow-md rounded-2xl m-6 p-8 max-w-md w-full">
+            <div class="text-center">
+                <img src="../static/image/netlab_icon.png" class="inline-block max-h-24 w-auto mb-6">
+                <p class="text-xl text-gray-800">ยินดีต้อนรับ, NetLabber!</p>
+                <p class="text-sm text-gray-600 mb-6">ลงชื่อเข้าใช้เพื่อเข้าถึง NetLab</p>
             </div>
-            <div class="bg-white border shadow-md rounded-2xl p-8">
-                <h2 class="text-xl text-gray-800 mb-6">ลงชื่อเข้าใช้</h2>
-                <form action="/signin" method="POST">
-                    <div class="mb-4">
-                        <label class="block text-sm text-gray-600 mb-2">ชื่อผู้ใช้ หรืออีเมล</label>
-                        <input type="text" name="identifier" placeholder="name@email.com หรือ username" required class="w-full bg-white border rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-600"/>
-                    </div>
-                    <div class="mb-4">
-                        <label class="block text-sm text-gray-600 mb-2">รหัสผ่าน</label>
-                        <input type="password" name="password" placeholder="**********" required class="w-full bg-white border rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-600"/>
-                    </div>
-                    <button type="submit" class="w-full bg-green-600 text-white text-sm px-4 py-3 rounded-xl">ลงชื่อเข้าใช้</button>
-                </form>
-            </div>
+            <form action="/signin" method="POST">
+                <div class="mb-4">
+                    <label class="block text-sm text-gray-600 mb-2">ชื่อผู้ใช้</label>
+                    <input type="text" name="identifier" placeholder="กรอกชื่อผู้ใช้ของคุณ" required class="w-full bg-white border rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-600"/>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm text-gray-600 mb-2">รหัสผ่าน</label>
+                    <input type="password" name="password" placeholder="กรอกรหัสผ่านของคุณ" required class="w-full bg-white border rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-600"/>
+                </div>
+                <p class="text-right text-sm text-gray-800 mb-4">ลืมรหัสผ่าน? ช่วยไม่ได้</p>
+                <button type="submit" class="w-full bg-gray-800 text-white text-sm px-4 py-3 rounded-xl">ลงชื่อเข้าใช้</button>
+            </form>
         </div>
     </div>
+    {% include "component/footer.html" %}
 </body>
 </html>
