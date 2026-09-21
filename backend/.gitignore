@@ -1,3 +1,11 @@
+# ===== Secrets / Credentials =====
+.env
+.env.*
+!.env.example
+*.pem
+*.ppk
+*.key
+
 .idea
 .ipynb_checkpoints
 .mypy_cache

@@ -1,0 +1,38 @@
+# vim temporary files
+*~
+.*.sw?
+.cache
+
+# macOS
+.DS_Store
+
+.codspeed
+
+# ===== Secrets / Credentials =====
+.env
+.env.*
+!.env.example
+*.pem
+*.ppk
+*.key
+
+# ===== Python =====
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+env/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# ===== IDE / Editor =====
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# ===== Logs =====
+*.log
