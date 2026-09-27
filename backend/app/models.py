@@ -12,7 +12,6 @@ class UserRole(str, Enum):
 class UserBase(BaseModel):
     username: str = Field(..., description="ชื่อผู้ใช้สำหรับเข้าสู่ระบบ")
     member_id: str = Field(..., description="รหัสประจำตัว / รหัสนักศึกษา / รหัสสมาชิก (Member ID)")
-    full_name: Optional[str] = Field(None, description="ชื่อ-นามสกุลจริง")
     role: UserRole = Field(default=UserRole.STUDENT, description="บทบาทผู้ใช้")
 
 

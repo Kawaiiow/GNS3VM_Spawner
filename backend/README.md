@@ -38,7 +38,6 @@ erDiagram
         string username GSI "UsernameIndex"
         string member_id GSI "MemberIdIndex"
         string password_hash "Bcrypt hash"
-        string full_name
         string role "student | instructor | admin"
         string active_instance_id "Nullable - 1-VM lock"
         string created_at "ISO-8601"

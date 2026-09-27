@@ -37,9 +37,6 @@ def main():
         default="student",
         help="บทบาทผู้ใช้: student (default), instructor, admin",
     )
-    parser.add_argument(
-        "-n", "--name", default=None, help="ชื่อ-นามสกุลจริงของผู้ใช้"
-    )
 
     args = parser.parse_args()
 
@@ -58,7 +55,6 @@ def main():
         member_id=args.member_id,
         password_hash=hashed,
         role=args.role,
-        full_name=args.name,
     )
 
     print("\n[✔] User created successfully!")
@@ -66,7 +62,6 @@ def main():
     print(f"    Username  : {user_item['username']}")
     print(f"    Member ID : {user_item['member_id']}")
     print(f"    Role      : {user_item['role']}")
-    print(f"    Full Name : {user_item.get('full_name') or '-'}")
     print(f"    Created At: {user_item['created_at']}")
 
 

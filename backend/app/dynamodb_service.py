@@ -120,7 +120,6 @@ def create_user(
     member_id: str,
     password_hash: str,
     role: str = "student",
-    full_name: Optional[str] = None,
 ) -> dict:
     table = get_users_table()
 
@@ -143,7 +142,6 @@ def create_user(
         "username": username,
         "member_id": member_id,
         "password_hash": password_hash,
-        "full_name": full_name or "",
         "role": role,
         "active_instance_id": None,
         "created_at": now,
