@@ -7,18 +7,26 @@ from app import ec2_service
 from app.auth import (
     create_access_token,
     get_current_admin_user,
+    get_current_instructor_or_admin,
     get_current_user,
     hash_password,
     verify_password,
 )
+from app.config import get_settings
 from app.dynamodb_service import (
+    create_exercise_record,
     create_user,
+    get_exercise_record,
     get_instance_record,
     get_user_by_id,
     get_user_by_identifier,
+    list_all_exercises,
     list_all_users,
 )
 from app.models import (
+    ExerciseCreate,
+    ExerciseListResponse,
+    ExerciseResponse,
     InstanceActionResponse,
     InstanceInfo,
     InstanceListResponse,
@@ -33,8 +41,8 @@ from app.models import (
 
 app = FastAPI(
     title="NetLab Cloud - Backend API",
-    description="API สำหรับระบบ GNS3 VM บน AWS Cloud พร้อม DynamoDB Users & Instances Management",
-    version="2.0.0",
+    description="API สำหรับระบบ GNS3 VM บน AWS Cloud พร้อม DynamoDB Users, Instances & Exercises Management",
+    version="2.1.0",
 )
 
 app.add_middleware(
@@ -59,7 +67,7 @@ def health_check():
 @app.post("/auth/login", response_model=TokenResponse)
 def login(payload: LoginRequest, response: Response):
     """
-    เข้าสู่ระบบด้วย Username หรือ Student ID และรหัสผ่าน
+    เข้าสู่ระบบด้วย Username หรือ Member ID (รหัสประจำตัว) และรหัสผ่าน
     คืนค่า JWT access token พร้อมตั้งค่า HttpOnly cookie สำหรับ browser
     """
     user_dict = get_user_by_identifier(payload.identifier)
@@ -80,7 +88,7 @@ def login(payload: LoginRequest, response: Response):
     token_data = {
         "sub": user_dict["user_id"],
         "username": user_dict["username"],
-        "student_id": user_dict["student_id"],
+        "member_id": user_dict["member_id"],
         "role": user_dict["role"],
     }
     token = create_access_token(token_data)
@@ -97,7 +105,7 @@ def login(payload: LoginRequest, response: Response):
     user_resp = UserResponse(
         user_id=user_dict["user_id"],
         username=user_dict["username"],
-        student_id=user_dict["student_id"],
+        member_id=user_dict["member_id"],
         full_name=user_dict.get("full_name"),
         role=user_dict["role"],
         active_instance_id=user_dict.get("active_instance_id"),
@@ -111,18 +119,60 @@ def login(payload: LoginRequest, response: Response):
 @app.get("/auth/me", response_model=UserResponse)
 def get_my_profile(current_user: UserInDB = Depends(get_current_user)):
     """ดูข้อมูลโปรไฟล์และสถานะ VM ปัจจุบันของผู้ใช้ที่ล็อกอินอยู่"""
-    # Fetch fresh user data from DynamoDB to reflect latest active_instance_id
     fresh_user = get_user_by_id(current_user.user_id) or current_user.model_dump()
     return UserResponse(
         user_id=fresh_user["user_id"],
         username=fresh_user["username"],
-        student_id=fresh_user["student_id"],
+        member_id=fresh_user["member_id"],
         full_name=fresh_user.get("full_name"),
         role=fresh_user["role"],
         active_instance_id=fresh_user.get("active_instance_id"),
         created_at=fresh_user["created_at"],
         updated_at=fresh_user["updated_at"],
     )
+
+
+# ==========================================
+# EXERCISES (LAB TEMPLATES) ENDPOINTS
+# ==========================================
+
+@app.get("/exercises", response_model=ExerciseListResponse)
+def get_exercises(only_active: bool = True):
+    """ดูรายการแบบฝึกหัด Lab ทั้งหมดที่เปิดให้ทำ"""
+    records = list_all_exercises(only_active=only_active)
+    exercises = [ExerciseResponse(**r) for r in records]
+    return ExerciseListResponse(count=len(exercises), exercises=exercises)
+
+
+@app.get("/exercises/{exercise_id}", response_model=ExerciseResponse)
+def get_exercise_detail(exercise_id: str):
+    """ดูรายละเอียดของแบบฝึกหัด Lab"""
+    record = get_exercise_record(exercise_id)
+    if not record:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Exercise '{exercise_id}' not found.",
+        )
+    return ExerciseResponse(**record)
+
+
+@app.post("/exercises", response_model=ExerciseResponse, status_code=201)
+def create_exercise(
+    payload: ExerciseCreate,
+    current_user: UserInDB = Depends(get_current_instructor_or_admin),
+):
+    """สร้างแบบฝึกหัด Lab ใหม่ (เฉพาะ Instructor หรือ Admin)"""
+    settings = get_settings()
+    ami_id = payload.ami_id or settings.default_ami_id
+    item = create_exercise_record(
+        instructor_id=current_user.user_id,
+        title=payload.title,
+        description=payload.description,
+        ami_id=ami_id,
+        status="available",
+        is_active=True,
+    )
+    return ExerciseResponse(**item)
 
 
 # ==========================================
@@ -155,32 +205,30 @@ def create_instance(
 ):
     """
     สร้าง (launch) GNS3 VM บน EC2
-    - ผูกกับ user_id และ student_id ของผู้ใช้ที่ล็อกอินโดยอัตโนมัติ
+    - ผูกกับ user_id ของผู้ใช้ที่ล็อกอินโดยอัตโนมัติ
     - บังคับโควตา 1 VM ต่อ 1 User อย่างเข้มงวดผ่าน DynamoDB Atomic Lock
+    - รองรับการเลือก exercise_id เพื่อดึง AMI ของแบบฝึกหัดนั้นมา Launch
     """
     return ec2_service.launch_instance(
         user_id=current_user.user_id,
-        student_id=current_user.student_id,
         instance_name=payload.instance_name,
         instance_type=payload.instance_type,
         ami_id=payload.ami_id,
+        exercise_id=payload.exercise_id,
     )
 
 
 @app.get("/instances", response_model=InstanceListResponse)
 def get_instances(
-    student_id: Optional[str] = Query(
-        None, description="สำหรับ Admin เพื่อ filter ดูเฉพาะของนักศึกษาคนใดคนหนึ่ง"
-    ),
     current_user: UserInDB = Depends(get_current_user),
 ):
     """
     List VM instances:
     - ถ้าเป็นนักศึกษา: จะเห็นเฉพาะ VM ของตนเอง
-    - ถ้าเป็น Admin: สามารถดู VM ทั้งหมด หรือ filter ตาม student_id ได้
+    - ถ้าเป็น Admin: สามารถดู VM ทั้งหมดของทุกคนในระบบ
     """
     if current_user.role == UserRole.ADMIN:
-        instances = ec2_service.list_instances(student_id=student_id)
+        instances = ec2_service.list_instances()
     else:
         instances = ec2_service.list_instances(user_id=current_user.user_id)
 
@@ -234,7 +282,7 @@ def admin_create_user(
     hashed = hash_password(payload.password)
     user_item = create_user(
         username=payload.username,
-        student_id=payload.student_id,
+        member_id=payload.member_id,
         password_hash=hashed,
         role=payload.role.value,
         full_name=payload.full_name,
@@ -242,7 +290,7 @@ def admin_create_user(
     return UserResponse(
         user_id=user_item["user_id"],
         username=user_item["username"],
-        student_id=user_item["student_id"],
+        member_id=user_item["member_id"],
         full_name=user_item.get("full_name"),
         role=user_item["role"],
         active_instance_id=user_item.get("active_instance_id"),
@@ -261,7 +309,7 @@ def admin_list_users(
         UserResponse(
             user_id=u["user_id"],
             username=u["username"],
-            student_id=u["student_id"],
+            member_id=u["member_id"],
             full_name=u.get("full_name"),
             role=u["role"],
             active_instance_id=u.get("active_instance_id"),

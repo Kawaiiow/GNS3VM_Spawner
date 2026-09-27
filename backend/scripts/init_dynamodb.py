@@ -2,17 +2,19 @@
 """
 init_dynamodb.py
 ----------------
-สคริปต์สำหรับสร้าง DynamoDB Tables สำหรับ NetLab:
+สคริปต์สำหรับสร้าง DynamoDB Tables สำหรับ NetLab (Reduced Schema):
 1. netlab_users:
    - Primary Key: user_id (S)
    - GSI: UsernameIndex (username - S)
-   - GSI: StudentIdIndex (student_id - S)
+   - GSI: MemberIdIndex (member_id - S)
 2. netlab_instances:
    - Primary Key: instance_id (S)
-   - GSI: UserIdIndex (user_id - S)
-   - GSI: StudentIdIndex (student_id - S)
+   - GSI: UserIdIndex (user_id - S)  <- ลด index ซ้ำซ้อน ตัด StudentIdIndex ออก
+3. netlab_exercises:
+   - Primary Key: exercise_id (S)
+   - GSI: InstructorIdIndex (instructor_id - S)
 
-ใช้ BillingMode = PAY_PER_REQUEST (On-Demand) เพื่อประหยัดค่าใช้จ่ายและรองรับ Learner Lab
+ใช้ BillingMode = PAY_PER_REQUEST (On-Demand)
 """
 
 import sys
@@ -48,7 +50,7 @@ def create_users_table(client, table_name: str):
         AttributeDefinitions=[
             {"AttributeName": "user_id", "AttributeType": "S"},
             {"AttributeName": "username", "AttributeType": "S"},
-            {"AttributeName": "student_id", "AttributeType": "S"},
+            {"AttributeName": "member_id", "AttributeType": "S"},
         ],
         GlobalSecondaryIndexes=[
             {
@@ -59,9 +61,9 @@ def create_users_table(client, table_name: str):
                 "Projection": {"ProjectionType": "ALL"},
             },
             {
-                "IndexName": "StudentIdIndex",
+                "IndexName": "MemberIdIndex",
                 "KeySchema": [
-                    {"AttributeName": "student_id", "KeyType": "HASH"},
+                    {"AttributeName": "member_id", "KeyType": "HASH"},
                 ],
                 "Projection": {"ProjectionType": "ALL"},
             },
@@ -83,7 +85,7 @@ def create_instances_table(client, table_name: str):
             print(f"[-] Error describing table '{table_name}': {e}")
             raise
 
-    print(f"[*] Creating table '{table_name}'...")
+    print(f"[*] Creating table '{table_name}' (Single UserIdIndex)...")
     client.create_table(
         TableName=table_name,
         KeySchema=[
@@ -92,7 +94,6 @@ def create_instances_table(client, table_name: str):
         AttributeDefinitions=[
             {"AttributeName": "instance_id", "AttributeType": "S"},
             {"AttributeName": "user_id", "AttributeType": "S"},
-            {"AttributeName": "student_id", "AttributeType": "S"},
         ],
         GlobalSecondaryIndexes=[
             {
@@ -102,10 +103,39 @@ def create_instances_table(client, table_name: str):
                 ],
                 "Projection": {"ProjectionType": "ALL"},
             },
+        ],
+        BillingMode="PAY_PER_REQUEST",
+    )
+    print(f"[+] Table '{table_name}' creation initiated.")
+
+
+def create_exercises_table(client, table_name: str):
+    print(f"[*] Checking table: {table_name}...")
+    try:
+        resp = client.describe_table(TableName=table_name)
+        status = resp["Table"]["TableStatus"]
+        print(f"[+] Table '{table_name}' already exists (Status: {status}).")
+        return
+    except ClientError as e:
+        if e.response["Error"]["Code"] != "ResourceNotFoundException":
+            print(f"[-] Error describing table '{table_name}': {e}")
+            raise
+
+    print(f"[*] Creating table '{table_name}'...")
+    client.create_table(
+        TableName=table_name,
+        KeySchema=[
+            {"AttributeName": "exercise_id", "KeyType": "HASH"},
+        ],
+        AttributeDefinitions=[
+            {"AttributeName": "exercise_id", "AttributeType": "S"},
+            {"AttributeName": "instructor_id", "AttributeType": "S"},
+        ],
+        GlobalSecondaryIndexes=[
             {
-                "IndexName": "StudentIdIndex",
+                "IndexName": "InstructorIdIndex",
                 "KeySchema": [
-                    {"AttributeName": "student_id", "KeyType": "HASH"},
+                    {"AttributeName": "instructor_id", "KeyType": "HASH"},
                 ],
                 "Projection": {"ProjectionType": "ALL"},
             },
@@ -136,17 +166,20 @@ def main():
     client = get_dynamodb_client()
 
     print("========================================")
-    print("NetLab DynamoDB Initializer")
+    print("NetLab DynamoDB Initializer (Reduced Schema)")
     print(f"Region: {settings.aws_region}")
     print(f"Users Table: {settings.users_table_name}")
     print(f"Instances Table: {settings.instances_table_name}")
+    print(f"Exercises Table: {settings.exercises_table_name}")
     print("========================================")
 
     create_users_table(client, settings.users_table_name)
     create_instances_table(client, settings.instances_table_name)
+    create_exercises_table(client, settings.exercises_table_name)
 
     wait_for_table_active(client, settings.users_table_name)
     wait_for_table_active(client, settings.instances_table_name)
+    wait_for_table_active(client, settings.exercises_table_name)
 
     print("\n[✔] DynamoDB tables initialization complete!")
 

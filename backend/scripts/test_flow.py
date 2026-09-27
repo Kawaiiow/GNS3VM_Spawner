@@ -2,10 +2,10 @@
 """
 test_flow.py
 ------------
-Automated verification suite for DynamoDB Users & Instances service:
+Automated verification suite for DynamoDB Users, Instances & Exercises (Reduced Schema):
 1. Password hashing (bcrypt) and verification
-2. JWT token generation, expiration, and payload decoding
-3. Pydantic model validation (User, Instance, Auth models)
+2. JWT token generation, expiration, and payload decoding with member_id
+3. Pydantic model validation (User, Instance, Exercise models)
 4. Atomic 1-VM-per-user limit logic and DynamoDB state transitions
 5. FastAPI Dependency and API route validation with TestClient
 """
@@ -30,6 +30,8 @@ from app.auth import (
 )
 from app.main import app
 from app.models import (
+    ExerciseCreate,
+    ExerciseResponse,
     InstanceInfo,
     LaunchInstanceRequest,
     LoginRequest,
@@ -53,7 +55,7 @@ class TestAuthAndTokens(unittest.TestCase):
         user_data = {
             "sub": "user-uuid-1234",
             "username": "student01",
-            "student_id": "6410001",
+            "member_id": "6410001",
             "role": "student",
         }
         token = create_access_token(user_data)
@@ -62,7 +64,7 @@ class TestAuthAndTokens(unittest.TestCase):
         decoded = decode_access_token(token)
         self.assertEqual(decoded["sub"], "user-uuid-1234")
         self.assertEqual(decoded["username"], "student01")
-        self.assertEqual(decoded["student_id"], "6410001")
+        self.assertEqual(decoded["member_id"], "6410001")
         self.assertEqual(decoded["role"], "student")
 
 
@@ -70,17 +72,18 @@ class TestPydanticModels(unittest.TestCase):
     def test_user_models(self):
         user_in = UserCreate(
             username="student_tester",
-            student_id="6410099",
+            member_id="6410099",
             password="testPassword123",
             full_name="Tester Test",
             role=UserRole.STUDENT,
         )
         self.assertEqual(user_in.username, "student_tester")
+        self.assertEqual(user_in.member_id, "6410099")
 
         user_resp = UserResponse(
             user_id="uuid-999",
             username=user_in.username,
-            student_id=user_in.student_id,
+            member_id=user_in.member_id,
             full_name=user_in.full_name,
             role=user_in.role,
             active_instance_id=None,
@@ -88,20 +91,37 @@ class TestPydanticModels(unittest.TestCase):
             updated_at="2026-09-20T00:00:00Z",
         )
         self.assertIsNone(user_resp.active_instance_id)
+        self.assertEqual(user_resp.member_id, "6410099")
 
     def test_instance_models(self):
         info = InstanceInfo(
             instance_id="i-0123456789abcdef0",
+            user_id="uuid-999",
+            exercise_id="ex-101",
             name="test-vm",
             state="running",
             instance_type="t2.micro",
             public_ip="54.200.10.20",
             private_ip="172.31.0.10",
-            student_id="6410099",
-            user_id="uuid-999",
         )
         self.assertEqual(info.instance_id, "i-0123456789abcdef0")
         self.assertEqual(info.state, "running")
+        self.assertEqual(info.user_id, "uuid-999")
+        self.assertEqual(info.exercise_id, "ex-101")
+
+    def test_exercise_models(self):
+        ex = ExerciseResponse(
+            exercise_id="ex-101",
+            instructor_id="inst-1",
+            title="Lab 1: Basic Routing",
+            description="Configure OSPF",
+            ami_id="ami-123456",
+            status="available",
+            is_active=True,
+            created_at="2026-09-27T00:00:00Z",
+        )
+        self.assertEqual(ex.title, "Lab 1: Basic Routing")
+        self.assertTrue(ex.is_active)
 
 
 class TestDynamoDBServiceLogic(unittest.TestCase):
@@ -162,7 +182,7 @@ class TestFastAPIRoutes(unittest.TestCase):
         self.mock_student_dict = {
             "user_id": "student-uuid-1",
             "username": "student_test",
-            "student_id": "6410001",
+            "member_id": "6410001",
             "password_hash": self.hashed_pw,
             "full_name": "Student Test",
             "role": "student",
@@ -171,10 +191,22 @@ class TestFastAPIRoutes(unittest.TestCase):
             "updated_at": "2026-09-20T00:00:00Z",
         }
 
+        self.mock_instructor_dict = {
+            "user_id": "inst-uuid-1",
+            "username": "inst_test",
+            "member_id": "INST01",
+            "password_hash": self.hashed_pw,
+            "full_name": "Instructor Test",
+            "role": "instructor",
+            "active_instance_id": None,
+            "created_at": "2026-09-20T00:00:00Z",
+            "updated_at": "2026-09-20T00:00:00Z",
+        }
+
         self.mock_admin_dict = {
             "user_id": "admin-uuid-1",
             "username": "admin_test",
-            "student_id": "0000000",
+            "member_id": "0000000",
             "password_hash": self.hashed_pw,
             "full_name": "Admin Test",
             "role": "admin",
@@ -187,8 +219,17 @@ class TestFastAPIRoutes(unittest.TestCase):
             {
                 "sub": "student-uuid-1",
                 "username": "student_test",
-                "student_id": "6410001",
+                "member_id": "6410001",
                 "role": "student",
+            }
+        )
+
+        self.instructor_token = create_access_token(
+            {
+                "sub": "inst-uuid-1",
+                "username": "inst_test",
+                "member_id": "INST01",
+                "role": "instructor",
             }
         )
 
@@ -196,7 +237,7 @@ class TestFastAPIRoutes(unittest.TestCase):
             {
                 "sub": "admin-uuid-1",
                 "username": "admin_test",
-                "student_id": "0000000",
+                "member_id": "0000000",
                 "role": "admin",
             }
         )
@@ -211,12 +252,13 @@ class TestFastAPIRoutes(unittest.TestCase):
         mock_get_user.return_value = self.mock_student_dict
         resp = self.client.post(
             "/auth/login",
-            json={"identifier": "student_test", "password": self.test_password},
+            json={"identifier": "6410001", "password": self.test_password},
         )
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertIn("access_token", data)
         self.assertEqual(data["user"]["username"], "student_test")
+        self.assertEqual(data["user"]["member_id"], "6410001")
         self.assertIn("access_token", resp.cookies)
 
     @patch("app.main.get_user_by_identifier")
@@ -241,6 +283,7 @@ class TestFastAPIRoutes(unittest.TestCase):
         resp = self.client.get("/auth/me", headers=headers)
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["user_id"], "student-uuid-1")
+        self.assertEqual(resp.json()["member_id"], "6410001")
 
     @patch("app.auth.get_user_by_id")
     @patch("app.main.ec2_service.launch_instance")
@@ -248,7 +291,6 @@ class TestFastAPIRoutes(unittest.TestCase):
         self, mock_launch_instance, mock_auth_user
     ):
         mock_auth_user.return_value = self.mock_student_dict
-        # Simulate 1-VM limit violation raised from ec2_service
         mock_launch_instance.side_effect = HTTPException(
             status_code=400,
             detail="User already owns an active VM instance (i-12345). Every user is limited to 1 active VM.",
@@ -267,9 +309,7 @@ class TestFastAPIRoutes(unittest.TestCase):
     def test_ownership_check_prevents_unauthorized_deletion(
         self, mock_get_instance, mock_auth_user
     ):
-        # Current user is student-uuid-1
         mock_auth_user.return_value = self.mock_student_dict
-        # Instance belongs to a different student: student-uuid-999
         mock_get_instance.return_value = {
             "instance_id": "i-other123",
             "user_id": "student-uuid-999",
@@ -280,7 +320,50 @@ class TestFastAPIRoutes(unittest.TestCase):
         self.assertEqual(resp.status_code, 403)
         self.assertIn("คุณไม่มีสิทธิ์จัดการ VM ของผู้ใช้อื่น", resp.json()["detail"])
 
+    @patch("app.main.list_all_exercises")
+    def test_get_exercises(self, mock_list_exercises):
+        mock_list_exercises.return_value = [
+            {
+                "exercise_id": "ex-1",
+                "instructor_id": "inst-1",
+                "title": "Lab 1",
+                "description": "Lab desc",
+                "ami_id": "ami-test",
+                "status": "available",
+                "is_active": True,
+                "created_at": "2026-09-27T00:00:00Z",
+            }
+        ]
+        resp = self.client.get("/exercises")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["count"], 1)
+        self.assertEqual(data["exercises"][0]["title"], "Lab 1")
+
+    @patch("app.auth.get_user_by_id")
+    @patch("app.main.create_exercise_record")
+    def test_create_exercise_by_instructor(self, mock_create_ex, mock_auth_user):
+        mock_auth_user.return_value = self.mock_instructor_dict
+        mock_create_ex.return_value = {
+            "exercise_id": "ex-new",
+            "instructor_id": "inst-uuid-1",
+            "title": "New Lab",
+            "description": "Lab desc",
+            "ami_id": "ami-custom",
+            "status": "available",
+            "is_active": True,
+            "created_at": "2026-09-27T00:00:00Z",
+        }
+        headers = {"Authorization": f"Bearer {self.instructor_token}"}
+        resp = self.client.post(
+            "/exercises",
+            json={"title": "New Lab", "ami_id": "ami-custom"},
+            headers=headers,
+        )
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.json()["exercise_id"], "ex-new")
+
 
 if __name__ == "__main__":
-    print("[*] Running NetLab DynamoDB & API Verification Test Suite...")
+    print("[*] Running NetLab DynamoDB (Reduced Schema) Verification Test Suite...")
     unittest.main(verbosity=2)

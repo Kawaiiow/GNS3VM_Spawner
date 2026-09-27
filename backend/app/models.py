@@ -11,7 +11,7 @@ class UserRole(str, Enum):
 
 class UserBase(BaseModel):
     username: str = Field(..., description="ชื่อผู้ใช้สำหรับเข้าสู่ระบบ")
-    student_id: str = Field(..., description="รหัสนักศึกษา หรือ รหัสประจำตัว")
+    member_id: str = Field(..., description="รหัสประจำตัว / รหัสนักศึกษา / รหัสสมาชิก (Member ID)")
     full_name: Optional[str] = Field(None, description="ชื่อ-นามสกุลจริง")
     role: UserRole = Field(default=UserRole.STUDENT, description="บทบาทผู้ใช้")
 
@@ -32,7 +32,7 @@ class UserInDB(UserResponse):
 
 
 class LoginRequest(BaseModel):
-    identifier: str = Field(..., description="ชื่อผู้ใช้ (Username) หรือ รหัสนักศึกษา (Student ID)")
+    identifier: str = Field(..., description="ชื่อผู้ใช้ (Username) หรือ รหัสประจำตัว (Member ID)")
     password: str = Field(..., description="รหัสผ่าน")
 
 
@@ -42,18 +42,51 @@ class TokenResponse(BaseModel):
     user: UserResponse
 
 
+# ==========================================
+# EXERCISE MODELS
+# ==========================================
+
+class ExerciseBase(BaseModel):
+    title: str = Field(..., description="ชื่อแบบฝึกหัด Lab")
+    description: Optional[str] = Field(None, description="คำอธิบายแบบฝึกหัด หรือโจทย์")
+    ami_id: str = Field(..., description="AWS AMI Image ID ที่เป็น Snapshot ของแบบฝึกหัดนี้")
+    is_active: bool = Field(default=True, description="สถานะเปิดให้นักศึกษาใช้งานหรือไม่")
+
+
+class ExerciseCreate(BaseModel):
+    title: str = Field(..., description="ชื่อแบบฝึกหัด Lab")
+    description: Optional[str] = Field(None, description="คำอธิบายแบบฝึกหัด หรือโจทย์")
+    ami_id: Optional[str] = Field(None, description="AMI ID (ถ้าไม่ระบุ จะดึงจาก VM Snapshot ปัจจุบันของผู้สอน)")
+
+
+class ExerciseResponse(ExerciseBase):
+    exercise_id: str
+    instructor_id: str
+    status: str = Field(..., description="สถานะ AMI snapshot: pending | available | failed")
+    created_at: str
+
+
+class ExerciseListResponse(BaseModel):
+    count: int
+    exercises: list[ExerciseResponse]
+
+
+# ==========================================
+# INSTANCE (VM) MODELS
+# ==========================================
+
 class LaunchInstanceRequest(BaseModel):
     """Request body ตอนขอสร้าง GNS3 VM ใหม่"""
 
-    instance_name: str = Field(..., description="ชื่อ instance เช่น gns3-6410000-vm1")
-    student_id: Optional[str] = Field(
-        None, description="รหัสนักศึกษา (ถ้าไม่ส่งจะใช้จากข้อมูลล็อกอินของ user)"
+    instance_name: str = Field(..., description="ชื่อ instance เช่น gns3-lab1-vm")
+    exercise_id: Optional[str] = Field(
+        None, description="รหัสแบบฝึกหัด Lab (ถ้าต้องการสร้าง VM จาก Template แบบฝึกหัด)"
     )
     instance_type: Optional[str] = Field(
         None, description="ถ้าไม่ระบุจะใช้ค่า default จาก config (t2.micro/t2.medium)"
     )
     ami_id: Optional[str] = Field(
-        None, description="ถ้าไม่ระบุจะใช้ AMI GNS3 default จาก config"
+        None, description="ถ้าไม่ระบุจะใช้ AMI ของ exercise หรือ AMI GNS3 default จาก config"
     )
 
 
@@ -65,14 +98,14 @@ class InstanceActionResponse(BaseModel):
 
 class InstanceInfo(BaseModel):
     instance_id: str
+    user_id: Optional[str] = None
+    exercise_id: Optional[str] = None
     name: Optional[str] = None
     state: str
-    instance_type: str
+    instance_type: Optional[str] = None
     public_ip: Optional[str] = None
     private_ip: Optional[str] = None
     launch_time: Optional[str] = None
-    student_id: Optional[str] = None
-    user_id: Optional[str] = None
     created_at: Optional[str] = None
     terminated_at: Optional[str] = None
 

@@ -1,85 +1,42 @@
-<<<<<<< Updated upstream
-# EC2 Provisioning API (FastAPI + Boto3)
-
-A REST API wrapper built with **FastAPI** and **Boto3** to automate the provisioning, lifecycle management, and nested virtualization configuration of Amazon EC2 instances (such as GNS3 VM lab nodes).
-
----
-
-## 1. Prerequisites
-
-Ensure you have the following installed on your machine:
-
-* **Python 3.10+**
-* **AWS CLI (v2)** configured with appropriate IAM permissions
-
-
-* **Git**
-
----
-
-## 2. Local Setup & Installation
-
-### Step 1: Clone the Repository
-
-```bash
-git clone <repository-url>
-cd <repository-folder>/backend
-
-```
-
-### Step 2: Create and Activate a Virtual Environment
-
-* **Linux / macOS:**
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-
-```
-
-
-* **Windows (PowerShell):**
-```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-
-```
-
-=======
 # GNS3 Cloud - NetLab Backend API
 
-FastAPI backend สำหรับระบบ **NetLab** ให้นักศึกษาแขนง Infrastructure ขอสร้างและควบคุม GNS3 VM บน AWS EC2 ผ่านเว็บไซต์ พร้อมระบบจัดการฐานข้อมูลผู้ใช้และอินสแตนซ์ด้วย **Amazon DynamoDB**, ระบบความปลอดภัย **JWT Authentication**, และการจำกัดสิทธิ์ **1 VM ต่อ 1 ผู้ใช้** แบบ Atomic
+FastAPI backend สำหรับระบบ **NetLab** ให้นักศึกษาแขนง Infrastructure ขอสร้างและควบคุม GNS3 VM บน AWS EC2 ผ่านเว็บไซต์ พร้อมระบบจัดการฐานข้อมูลผู้ใช้, อินสแตนซ์, และแบบฝึกหัด Lab ด้วย **Amazon DynamoDB (Reduced Schema)**, ระบบความปลอดภัย **JWT Authentication**, และการจำกัดสิทธิ์ **1 VM ต่อ 1 ผู้ใช้** แบบ Atomic
 
 ---
 
 ## 🚀 ฟีเจอร์หลักของระบบ
 
 1. **Authentication & User Management (DynamoDB)**
-   - ระบบลงชื่อเข้าใช้ด้วย Username หรือ Student ID พร้อมรหัสผ่านที่เข้ารหัสด้วย `bcrypt`
+   - ระบบลงชื่อเข้าใช้ด้วย Username หรือ Member ID พร้อมรหัสผ่านที่เข้ารหัสด้วย `bcrypt`
    - ออกบัตรประจำตัวแบบ **JWT (HS256)** รองรับทั้ง `Authorization: Bearer <token>` และ `HttpOnly Cookie`
    - แบ่งระดับสิทธิ์ผู้ใช้: `student`, `instructor`, และ `admin`
-   - สคริปต์ CLI สำหรับสร้างบัญชี Admin และนักศึกษา (`scripts/create_user.py`)
-2. **EC2 & VM Lifecycle with DynamoDB Persistence**
+   - สคริปต์ CLI สำหรับสร้างบัญชี Admin, ผู้สอน, และนักศึกษา (`scripts/create_user.py`)
+2. **EC2 & VM Lifecycle with DynamoDB Persistence (Reduced Schema)**
    - **Atomic 1-VM Limit**: ผู้ใช้แต่ละคนมีสิทธิ์เปิดใช้งาน VM ได้สูงสุด **1 เครื่องพร้อมกันเท่านั้น** (ป้องกันด้วย DynamoDB Conditional Write ไม่ให้เกิด Race Condition)
+   - **Reduced Schema**: อินสแตนซ์ผูกกับ `user_id` เพียงตัวเดียว ตัด `student_id` และ `StudentIdIndex` GSI ออกเพื่อประหยัดค่าใช้จ่ายการเขียน Index ใน DynamoDB ถึง 50%
    - Real-time Sync สถานะจาก EC2 (Pending, Running, Stopped, Terminated) เข้าตาราง DynamoDB อัตโนมัติ
    - Ownership Protection: นักศึกษาไม่สามารถ Start, Stop หรือ Terminate VM ของผู้อื่นได้
    - คืนโควตา 1 VM ทันทีเมื่อผู้ใช้สั่ง Terminate VM ตัวเดิม
-3. **Automated Provisioning & Verification**
+3. **Lab Exercises Management**
+   - รองรับการสร้างแบบฝึกหัด Lab (`netlab_exercises`) จาก Template / Snapshot AMI
+   - นักศึกษาสามารถเลือก `exercise_id` ตอนขอสร้าง VM เพื่อโหลดโจทย์และ Topology มาเริ่มต้นใช้งานได้ทันที
+4. **Automated Provisioning & Verification**
    - สคริปต์สร้างตาราง DynamoDB อัตโนมัติ (`scripts/init_dynamodb.py`) แบบ On-Demand (`PAY_PER_REQUEST`)
    - ชุดทดสอบความถูกต้องของระบบแบบครอบคลุม 100% (`scripts/test_flow.py`)
    - เอกสารสรุป API ทุก Route ฉบับเต็มใน [`api_doc.md`](api_doc.md)
 
 ---
 
-## 🗄️ โครงสร้างฐานข้อมูล DynamoDB (Database Schema)
+## 🗄️ โครงสร้างฐานข้อมูล DynamoDB (Reduced Schema)
 
-ระบบใช้ตาราง DynamoDB จำนวน 2 ตารางแบบ On-Demand (`PAY_PER_REQUEST`):
+ระบบใช้ตาราง DynamoDB จำนวน 3 ตารางแบบ On-Demand (`PAY_PER_REQUEST`):
 
 ```mermaid
 erDiagram
     USERS {
         string user_id PK "UUID"
         string username GSI "UsernameIndex"
-        string student_id GSI "StudentIdIndex"
+        string member_id GSI "MemberIdIndex"
         string password_hash "Bcrypt hash"
         string full_name
         string role "student | instructor | admin"
@@ -90,8 +47,8 @@ erDiagram
 
     VM_INSTANCES {
         string instance_id PK "EC2 Instance ID (i-xxx)"
-        string user_id GSI "UserIdIndex"
-        string student_id GSI "StudentIdIndex"
+        string user_id GSI "UserIdIndex (single user reference)"
+        string exercise_id "Nullable - references EXERCISES"
         string name "Instance friendly name"
         string instance_type
         string ami_id
@@ -102,16 +59,25 @@ erDiagram
         string terminated_at "Nullable"
     }
 
+    EXERCISES {
+        string exercise_id PK "UUID"
+        string instructor_id GSI "InstructorIdIndex"
+        string ami_id "AWS EC2 AMI ID"
+        string title
+        string description
+        string status "pending | available | failed"
+        boolean is_active
+        string created_at "ISO-8601"
+    }
+
     USERS ||--o| VM_INSTANCES : "owns at most 1 active"
+    USERS ||--o{ EXERCISES : "creates"
+    EXERCISES ||--o{ VM_INSTANCES : "spawns"
 ```
->>>>>>> Stashed changes
 
+---
 
-<<<<<<< Updated upstream
-### Step 3: Install Dependencies
-=======
 ## ⚠️ คำแนะนำสำหรับ AWS Academy Learner Lab
->>>>>>> Stashed changes
 
 โปรเจกต์นี้รองรับทั้ง **AWS Academy Learner Lab** และ **AWS Account จริงทั่วไป**:
 - **AWS Learner Lab**:
@@ -129,100 +95,6 @@ erDiagram
 
 ### 1. ติดตั้ง Dependencies
 ```bash
-<<<<<<< Updated upstream
-pip install -r requirements.txt
-
-```
-
-*(If you are initializing dependencies from scratch, use:)*
-
-```text
-boto3==1.43.83
-fastapi==0.141.1
-pydantic==2.13.5
-pydantic-settings==2.15.0
-python-dotenv==1.2.3
-uvicorn==0.52.4
-
-```
-
----
-
-## 3. Environment & AWS Configuration
-
-### Configure Local AWS Credentials
-
-If you haven't configured your AWS credentials locally, run:
-
-```bash
-aws configure
-
-```
-
-You will be prompted for:
-
-* `AWS Access Key ID`
-
-* `AWS Secret Access Key`
-
-* `Default region name` (e.g., `us-east-1`)
-
-
-* `Default output format` (`json`)
-
-
-
-### Create `.env` Configuration File
-
-Create a `.env` file in the root directory:
-
-```env
-AWS_REGION=us-east-1
-DEFAULT_AMI_ID=ami-xxxxxxxxxxxxxxxxx
-DEFAULT_INSTANCE_TYPE=c7i-flex.xlarge
-DEFAULT_KEY_NAME=your-key-name
-DEFAULT_SECURITY_GROUP_ID=sg-xxxxxxxxxxxxxxxxx
-DEFAULT_SUBNET_ID=subnet-xxxxxxxxxxxxxxxxx
-
-```
-
-> **Note:** For running nested hypervisors (e.g., GNS3/QEMU/KVM nodes), instances require Nitro-based Intel architectures (such as `c7i-flex.xlarge`) with `NestedVirtualization` enabled in the launch parameters.
-> 
-> 
-
----
-
-## 4. Running the Application
-
-Start the local ASGI development server with auto-reload:
-
-```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-
-```
-
----
-
-## 5. API Documentation & Endpoints
-
-Once the application is running, access the interactive API docs:
-
-* **Swagger UI:** [http://127.0.0.1:8000/docs](https://www.google.com/search?q=http://127.0.0.1:8000/docs)
-* **ReDoc:** [http://127.0.0.1:8000/redoc](https://www.google.com/search?q=http://127.0.0.1:8000/redoc)
-
-### Key Endpoints
-
-| Method | Endpoint | Description |
-| --- | --- | --- |
-| `POST` | `/api/v1/instances` | Launches an EC2 instance (supports nested virtualization flags).
-
- |
-| `GET` | `/api/v1/instances` | Lists running instances filtered by tag/status. |
-| `GET` | `/api/v1/instances/{id}` | Retrieves status and IP metadata for a specific instance. |
-| `DELETE` | `/api/v1/instances/{id}` | Terminates an instance. |
-
----
-=======
 cd backend
 python3 -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
@@ -251,6 +123,7 @@ MAX_CONCURRENT_INSTANCES=3
 # DynamoDB Configuration
 USERS_TABLE_NAME=netlab_users
 INSTANCES_TABLE_NAME=netlab_instances
+EXERCISES_TABLE_NAME=netlab_exercises
 
 # JWT Configuration
 JWT_SECRET_KEY=netlab-super-secret-key-change-in-production
@@ -259,19 +132,22 @@ JWT_EXPIRE_MINUTES=1440
 ```
 
 ### 3. สร้างตารางใน DynamoDB (ทำครั้งแรกครั้งเดียว)
-รันสคริปต์เพื่อสร้างตาราง `netlab_users` และ `netlab_instances` พร้อม Index ต่างๆ:
+รันสคริปต์เพื่อสร้างตาราง `netlab_users`, `netlab_instances`, และ `netlab_exercises`:
 ```bash
 python scripts/init_dynamodb.py
 ```
 
-### 4. สร้างบัญชีผู้ใช้เริ่มต้น (Admin / Student)
-ใช้สคริปต์ CLI เพื่อสร้างบัญชี:
+### 4. สร้างบัญชีผู้ใช้เริ่มต้น (Admin / Instructor / Student)
+ใช้สคริปต์ CLI เพื่อสร้างบัญชี (ใช้ `-m` / `--member-id`):
 ```bash
 # สร้างบัญชี Admin
-python scripts/create_user.py -u admin -s 0000000 -p AdminPass123! -r admin -n "System Admin"
+python scripts/create_user.py -u admin -m 0000000 -p AdminPass123! -r admin -n "System Admin"
+
+# สร้างบัญชีผู้สอน
+python scripts/create_user.py -u instructor01 -m INST01 -p InstPass123! -r instructor -n "Ajarn Somchai"
 
 # สร้างบัญชีนักศึกษา
-python scripts/create_user.py -u student01 -s 6410001 -p StudentPass123! -r student -n "Somchai Student"
+python scripts/create_user.py -u student01 -m 6410001 -p StudentPass123! -r student -n "Somchai Student"
 ```
 
 ### 5. รันเซิร์ฟเวอร์ Backend
@@ -285,12 +161,12 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 ## 🧪 การทดสอบระบบ (Automated Tests)
 
-รันชุดทดสอบเพื่อยืนยันว่าระบบ Authentication, Bcrypt, JWT, DynamoDB Persistence, และการจำกัด 1-VM ทำงานได้ถูกต้องสมบูรณ์ 100%:
+รันชุดทดสอบเพื่อยืนยันว่าระบบ Authentication, Member ID, Single Index Instances, Exercises, และ 1-VM Limit ทำงานได้ถูกต้องสมบูรณ์ 100%:
 
 ```bash
 python scripts/test_flow.py
 ```
-*จะทำการทดสอบ 14 Test Cases และรายงานผลทันทีโดยไม่ต้องเปิด AWS Lab*
+*จะทำการทดสอบ 17 Test Cases และรายงานผลทันทีโดยไม่ต้องเปิด AWS Lab*
 
 ---
 
@@ -298,11 +174,11 @@ python scripts/test_flow.py
 
 > ดูคู่มือ API ฉบับละเอียดและ Response Model ทั้งหมดได้ที่ [`api_doc.md`](api_doc.md)
 
-### 1. เข้าสู่ระบบ (Login)
+### 1. เข้าสู่ระบบ (Login ด้วย Username หรือ Member ID)
 ```bash
 curl -X POST http://localhost:8000/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"identifier": "student01", "password": "StudentPass123!"}' \
+  -d '{"identifier": "6410001", "password": "StudentPass123!"}' \
   -c cookies.txt
 ```
 *ระบบจะบันทึกคุกกี้ `access_token` ลงใน `cookies.txt` และส่งค่า JWT Token กลับมาใน Response*
@@ -317,21 +193,33 @@ curl -X GET http://localhost:8000/auth/me \
   -H "Authorization: Bearer <TOKEN_HERE>"
 ```
 
-### 3. ขอสร้าง GNS3 VM ใหม่ (ผูกกับผู้ใช้และจำกัด 1 VM)
+### 3. ดูรายการแบบฝึกหัด Lab (Exercises)
 ```bash
+curl -X GET http://localhost:8000/exercises
+```
+
+### 4. ขอสร้าง GNS3 VM ใหม่ (ผูกกับผู้ใช้และจำกัด 1 VM)
+```bash
+# สั่งสร้าง VM ว่างเปล่าทั่วไป
 curl -X POST http://localhost:8000/instances \
   -b cookies.txt \
   -H "Content-Type: application/json" \
   -d '{"instance_name": "gns3-student01-vm1"}'
+
+# หรือสั่งสร้าง VM จากแบบฝึกหัด Lab
+curl -X POST http://localhost:8000/instances \
+  -b cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{"instance_name": "gns3-lab1-vm", "exercise_id": "<EXERCISE_ID>"}'
 ```
 *หากผู้ใช้มี VM ที่ยังไม่ถูก Terminate อยู่แล้ว API จะตอบกลับด้วย `400 Bad Request` ทันที*
 
-### 4. ดูรายการ VM ทั้งหมดของตนเอง
+### 5. ดูรายการ VM ทั้งหมดของตนเอง
 ```bash
 curl -X GET http://localhost:8000/instances -b cookies.txt
 ```
 
-### 5. เปิดเครื่อง / ปิดเครื่อง VM
+### 6. เปิดเครื่อง / ปิดเครื่อง VM
 ```bash
 # เปิดเครื่อง (Start)
 curl -X POST http://localhost:8000/instances/i-0123456789abcdef0/start -b cookies.txt
@@ -340,7 +228,7 @@ curl -X POST http://localhost:8000/instances/i-0123456789abcdef0/start -b cookie
 curl -X POST http://localhost:8000/instances/i-0123456789abcdef0/stop -b cookies.txt
 ```
 
-### 6. ลบ VM (Terminate) และคืนโควตา 1 VM
+### 7. ลบ VM (Terminate) และคืนโควตา 1 VM
 ```bash
 curl -X DELETE http://localhost:8000/instances/i-0123456789abcdef0 -b cookies.txt
 ```
@@ -363,7 +251,7 @@ chmod +x scripts/push_to_ecr.sh
 3. ใส่ **Environment Variables** ให้ครบตามไฟล์ `.env`:
    - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_REGION`
    - `DEFAULT_AMI_ID`, `DEFAULT_KEY_NAME`, `DEFAULT_SECURITY_GROUP_ID`, `DEFAULT_INSTANCE_TYPE`
-   - `USERS_TABLE_NAME` (`netlab_users`), `INSTANCES_TABLE_NAME` (`netlab_instances`)
+   - `USERS_TABLE_NAME` (`netlab_users`), `INSTANCES_TABLE_NAME` (`netlab_instances`), `EXERCISES_TABLE_NAME` (`netlab_exercises`)
    - `JWT_SECRET_KEY`, `JWT_ALGORITHM`, `JWT_EXPIRE_MINUTES`
 
 ### ขั้นตอนที่ 3: รัน ECS Service (Fargate)
@@ -380,4 +268,3 @@ chmod +x scripts/push_to_ecr.sh
 2. **Bcrypt Password Security**: รหัสผ่านของผู้ใช้ไม่เคยถูกจัดเก็บในรูป Plain text
 3. **Atomic State Locks**: ระบบป้องกัน Race condition ในการขอสร้าง VM ของนักศึกษาด้วย DynamoDB Conditional Expressions
 4. **Ownership Verification**: Endpoint ทุกจุดมีการตรวจสอบ Identity เพื่อป้องกันไม่ให้ผู้ใช้แอบสั่งควบคุมหรือลบเครื่องของคนอื่น
->>>>>>> Stashed changes

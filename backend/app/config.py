@@ -65,6 +65,7 @@ class Settings(BaseSettings):
     # DynamoDB Tables & Endpoint
     users_table_name: str = "netlab_users"
     instances_table_name: str = "netlab_instances"
+    exercises_table_name: str = "netlab_exercises"
     dynamodb_endpoint_url: Optional[str] = None
 
     # JWT Authentication

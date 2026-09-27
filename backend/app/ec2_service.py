@@ -5,8 +5,8 @@ ec2_service.py
 - ทุก instance ที่สร้างผ่านระบบนี้จะถูกติด Tag:
   - Project   = gns3-cloud
   - Name      = <instance_name>
-  - StudentId = <student_id>
   - UserId    = <user_id>
+  - ExerciseId = <exercise_id> (ถ้ามี)
 - จัดการ 1-VM per user constraint ร่วมกับ dynamodb_service
 """
 
@@ -21,6 +21,7 @@ from app.config import get_settings
 from app.dynamodb_service import (
     assign_user_vm,
     create_instance_record,
+    get_exercise_record,
     get_instance_record,
     list_all_instances as db_list_all_instances,
     list_instances_by_user as db_list_instances_by_user,
@@ -71,8 +72,8 @@ def _instance_to_info(instance: dict) -> InstanceInfo:
         public_ip=instance.get("PublicIpAddress"),
         private_ip=instance.get("PrivateIpAddress"),
         launch_time=launch_time_str,
-        student_id=_get_tag(tags, "StudentId"),
         user_id=_get_tag(tags, "UserId"),
+        exercise_id=_get_tag(tags, "ExerciseId"),
         created_at=launch_time_str,
     )
 
@@ -93,13 +94,25 @@ def _count_active_project_instances(client) -> int:
 
 def launch_instance(
     user_id: str,
-    student_id: str,
     instance_name: str,
     instance_type: Optional[str] = None,
     ami_id: Optional[str] = None,
+    exercise_id: Optional[str] = None,
 ) -> InstanceInfo:
     settings = get_settings()
     client = get_ec2_client()
+
+    # ตรวจสอบ exercise_id (ถ้ามีส่งมา)
+    resolved_ami = ami_id
+    if exercise_id:
+        exercise = get_exercise_record(exercise_id)
+        if not exercise or not exercise.get("is_active"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Exercise '{exercise_id}' not found or inactive.",
+            )
+        if not resolved_ami:
+            resolved_ami = exercise.get("ami_id")
 
     # 1. Atomic reservation in DynamoDB: checks if user already has an active VM
     reserve_user_vm_slot(user_id)
@@ -121,7 +134,7 @@ def launch_instance(
             release_user_vm(user_id)
         raise e
 
-    target_ami = ami_id or settings.default_ami_id
+    target_ami = resolved_ami or settings.default_ami_id
     target_type = instance_type or settings.default_instance_type
 
     run_instances_kwargs = dict(
@@ -140,19 +153,22 @@ def launch_instance(
 
     now_iso = datetime.now(timezone.utc).isoformat()
 
+    tags = [
+        {"Key": "Name", "Value": instance_name},
+        {"Key": "Project", "Value": PROJECT_TAG_VALUE},
+        {"Key": "UserId", "Value": user_id},
+        {"Key": "CreatedAt", "Value": now_iso},
+    ]
+    if exercise_id:
+        tags.append({"Key": "ExerciseId", "Value": exercise_id})
+
     try:
         resp = client.run_instances(
             **run_instances_kwargs,
             TagSpecifications=[
                 {
                     "ResourceType": "instance",
-                    "Tags": [
-                        {"Key": "Name", "Value": instance_name},
-                        {"Key": "Project", "Value": PROJECT_TAG_VALUE},
-                        {"Key": "StudentId", "Value": student_id},
-                        {"Key": "UserId", "Value": user_id},
-                        {"Key": "CreatedAt", "Value": now_iso},
-                    ],
+                    "Tags": tags,
                 }
             ],
         )
@@ -169,7 +185,7 @@ def launch_instance(
     create_instance_record(
         instance_id=instance_id,
         user_id=user_id,
-        student_id=student_id,
+        exercise_id=exercise_id,
         instance_name=instance_name,
         instance_type=target_type,
         ami_id=target_ami,
@@ -184,21 +200,20 @@ def launch_instance(
 
     return InstanceInfo(
         instance_id=instance_id,
+        user_id=user_id,
+        exercise_id=exercise_id,
         name=instance_name,
         state=state,
         instance_type=target_type,
         public_ip=instance.get("PublicIpAddress"),
         private_ip=instance.get("PrivateIpAddress"),
         launch_time=now_iso,
-        student_id=student_id,
-        user_id=user_id,
         created_at=now_iso,
     )
 
 
 def list_instances(
     user_id: Optional[str] = None,
-    student_id: Optional[str] = None,
     sync_with_ec2: bool = True,
 ) -> list[InstanceInfo]:
     """
@@ -208,9 +223,6 @@ def list_instances(
         records = db_list_instances_by_user(user_id)
     else:
         records = db_list_all_instances()
-
-    if student_id:
-        records = [r for r in records if r.get("student_id") == student_id]
 
     # Optionally sync real-time status with EC2 for non-terminated instances
     client = get_ec2_client()
@@ -245,14 +257,14 @@ def list_instances(
         results.append(
             InstanceInfo(
                 instance_id=iid,
+                user_id=r.get("user_id"),
+                exercise_id=r.get("exercise_id"),
                 name=r.get("name"),
                 state=latest.get("state", r.get("state", "unknown")),
                 instance_type=r.get("instance_type", ""),
                 public_ip=latest.get("public_ip", r.get("public_ip")),
                 private_ip=latest.get("private_ip", r.get("private_ip")),
                 launch_time=r.get("launch_time"),
-                student_id=r.get("student_id"),
-                user_id=r.get("user_id"),
                 created_at=r.get("created_at"),
                 terminated_at=r.get("terminated_at"),
             )

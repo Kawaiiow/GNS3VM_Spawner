@@ -2,8 +2,9 @@
 dynamodb_service.py
 -------------------
 Logic สำหรับการเชื่อมต่อและจัดการข้อมูลใน DynamoDB:
-- Users table: จัดการข้อมูลผู้ใช้, รหัสผ่าน, และการล็อก 1-VM per user แบบ atomic
-- Instances table: บันทึกประวัติและสถานะของ EC2 instance
+- Users table: จัดการข้อมูลผู้ใช้, รหัสผ่าน (member_id), และการล็อก 1-VM per user แบบ atomic
+- Instances table: บันทึกข้อมูลและสถานะของ EC2 instance (ลด key ที่ซ้ำซ้อน โดยผูกตรงกับ user_id เท่านั้น)
+- Exercises table: แบบฝึกหัด Lab ที่สร้างจาก Snapshot AMI
 """
 
 from datetime import datetime, timezone
@@ -49,6 +50,11 @@ def get_instances_table():
     return get_dynamodb_resource().Table(settings.instances_table_name)
 
 
+def get_exercises_table():
+    settings = get_settings()
+    return get_dynamodb_resource().Table(settings.exercises_table_name)
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -85,49 +91,49 @@ def get_user_by_username(username: str) -> Optional[dict]:
         )
 
 
-def get_user_by_student_id(student_id: str) -> Optional[dict]:
+def get_user_by_member_id(member_id: str) -> Optional[dict]:
     table = get_users_table()
     try:
         response = table.query(
-            IndexName="StudentIdIndex",
-            KeyConditionExpression=Key("student_id").eq(student_id),
+            IndexName="MemberIdIndex",
+            KeyConditionExpression=Key("member_id").eq(member_id),
         )
         items = response.get("Items", [])
         return items[0] if items else None
     except ClientError as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"DynamoDB error querying student_id: {e.response['Error']['Message']}",
+            detail=f"DynamoDB error querying member_id: {e.response['Error']['Message']}",
         )
 
 
 def get_user_by_identifier(identifier: str) -> Optional[dict]:
-    """ค้นหา user จาก username ก่อน หากไม่เจอให้ค้นหาจาก student_id"""
+    """ค้นหา user จาก username ก่อน หากไม่เจอให้ค้นหาจาก member_id"""
     user = get_user_by_username(identifier)
     if not user:
-        user = get_user_by_student_id(identifier)
+        user = get_user_by_member_id(identifier)
     return user
 
 
 def create_user(
     username: str,
-    student_id: str,
+    member_id: str,
     password_hash: str,
     role: str = "student",
     full_name: Optional[str] = None,
 ) -> dict:
     table = get_users_table()
 
-    # ตรวจสอบความซ้ำซ้อนของ username และ student_id
+    # ตรวจสอบความซ้ำซ้อนของ username และ member_id
     if get_user_by_username(username):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Username '{username}' is already in use.",
         )
-    if get_user_by_student_id(student_id):
+    if get_user_by_member_id(member_id):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Student ID '{student_id}' is already registered.",
+            detail=f"Member ID '{member_id}' is already registered.",
         )
 
     user_id = str(uuid.uuid4())
@@ -135,7 +141,7 @@ def create_user(
     user_item = {
         "user_id": user_id,
         "username": username,
-        "student_id": student_id,
+        "member_id": member_id,
         "password_hash": password_hash,
         "full_name": full_name or "",
         "role": role,
@@ -174,11 +180,6 @@ def list_all_users() -> list[dict]:
 # ==========================================
 
 def reserve_user_vm_slot(user_id: str) -> None:
-    """
-    จองโควตา VM ให้กับ User แบบ Atomic โดยใช้ ConditionExpression
-    หากผู้ใช้มี active_instance_id อยู่แล้ว (ไม่ว่าจะเป็น PENDING_LAUNCH หรือ i-xxxx)
-    จะเกิด ConditionalCheckFailedException และปฏิเสธคำขอทันที
-    """
     table = get_users_table()
     now = _now_iso()
 
@@ -209,7 +210,6 @@ def reserve_user_vm_slot(user_id: str) -> None:
 
 
 def assign_user_vm(user_id: str, instance_id: str) -> None:
-    """อัปเดต active_instance_id ของ user เป็น instance_id จริงที่ได้จาก EC2"""
     table = get_users_table()
     now = _now_iso()
     try:
@@ -229,7 +229,6 @@ def assign_user_vm(user_id: str, instance_id: str) -> None:
 
 
 def release_user_vm(user_id: str) -> None:
-    """เคลียร์ active_instance_id เป็น None เมื่อ VM ถูก terminate เพื่อให้สร้าง VM ใหม่ได้"""
     table = get_users_table()
     now = _now_iso()
     try:
@@ -249,16 +248,16 @@ def release_user_vm(user_id: str) -> None:
 
 
 # ==========================================
-# VM INSTANCES CRUD
+# VM INSTANCES CRUD (REDUCED SCHEMA - USER_ID ONLY)
 # ==========================================
 
 def create_instance_record(
     instance_id: str,
     user_id: str,
-    student_id: str,
     instance_name: str,
     instance_type: str,
     ami_id: str,
+    exercise_id: Optional[str] = None,
     state: str = "pending",
     public_ip: Optional[str] = None,
     private_ip: Optional[str] = None,
@@ -269,7 +268,7 @@ def create_instance_record(
     item = {
         "instance_id": instance_id,
         "user_id": user_id,
-        "student_id": student_id,
+        "exercise_id": exercise_id,
         "name": instance_name,
         "instance_type": instance_type,
         "ami_id": ami_id,
@@ -360,6 +359,7 @@ def mark_instance_terminated(instance_id: str) -> None:
 
 
 def list_instances_by_user(user_id: str, include_terminated: bool = False) -> list[dict]:
+    """Query หา instances ตาม user_id ผ่าน UserIdIndex (ไม่ต้องมี StudentIdIndex ให้เปลืองทรัพยากร)"""
     table = get_instances_table()
     try:
         response = table.query(
@@ -389,4 +389,101 @@ def list_all_instances(include_terminated: bool = False) -> list[dict]:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error scanning instances: {e.response['Error']['Message']}",
+        )
+
+
+# ==========================================
+# EXERCISES CRUD
+# ==========================================
+
+def create_exercise_record(
+    instructor_id: str,
+    title: str,
+    ami_id: str,
+    description: Optional[str] = None,
+    status: str = "available",
+    is_active: bool = True,
+) -> dict:
+    table = get_exercises_table()
+    exercise_id = str(uuid.uuid4())
+    now = _now_iso()
+    item = {
+        "exercise_id": exercise_id,
+        "instructor_id": instructor_id,
+        "title": title,
+        "description": description or "",
+        "ami_id": ami_id,
+        "status": status,
+        "is_active": is_active,
+        "created_at": now,
+        "updated_at": now,
+    }
+    try:
+        table.put_item(Item=item)
+        return item
+    except ClientError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating exercise in DynamoDB: {e.response['Error']['Message']}",
+        )
+
+
+def get_exercise_record(exercise_id: str) -> Optional[dict]:
+    table = get_exercises_table()
+    try:
+        response = table.get_item(Key={"exercise_id": exercise_id})
+        return response.get("Item")
+    except ClientError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error getting exercise: {e.response['Error']['Message']}",
+        )
+
+
+def list_all_exercises(only_active: bool = True) -> list[dict]:
+    table = get_exercises_table()
+    try:
+        if only_active:
+            response = table.scan(
+                FilterExpression=Attr("is_active").eq(True)
+            )
+        else:
+            response = table.scan()
+        return response.get("Items", [])
+    except ClientError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error scanning exercises: {e.response['Error']['Message']}",
+        )
+
+
+def list_exercises_by_instructor(instructor_id: str) -> list[dict]:
+    table = get_exercises_table()
+    try:
+        response = table.query(
+            IndexName="InstructorIdIndex",
+            KeyConditionExpression=Key("instructor_id").eq(instructor_id),
+        )
+        return response.get("Items", [])
+    except ClientError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error querying exercises by instructor: {e.response['Error']['Message']}",
+        )
+
+
+def update_exercise_status(exercise_id: str, status_val: str) -> None:
+    table = get_exercises_table()
+    now = _now_iso()
+    try:
+        table.update_item(
+            Key={"exercise_id": exercise_id},
+            UpdateExpression="SET #st = :s, updated_at = :now",
+            ExpressionAttributeNames={"#st": "status"},
+            ExpressionAttributeValues={":s": status_val, ":now": now},
+        )
+    except ClientError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating exercise status: {e.response['Error']['Message']}",
         )
