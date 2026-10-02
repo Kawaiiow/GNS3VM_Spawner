@@ -45,5 +45,5 @@ def render_admin_edit(request: Request):
 def catch_all(request: Request):
     return template.TemplateResponse(
         request=request,
-        name="notfound.html"
+        name="404.html"
     )
