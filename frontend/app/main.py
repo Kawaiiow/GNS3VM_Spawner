@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from router import user, admin
+import uvicorn
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -16,3 +17,6 @@ def catch_all(request: Request):
         request=request,
         name="404.html"
     )
+
+if __name__ == "__main__":
+    uvicorn.run("main:app", host="localhost", port=8080, reload=True)
