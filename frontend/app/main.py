@@ -1,47 +1,16 @@
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from router import user, admin
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 template = Jinja2Templates(directory="template")
 
-@app.get("/")
-def render_home(request: Request):
-    return template.TemplateResponse(
-        request=request,
-        name="home.html"
-    )
+app.include_router(user.router)
+app.include_router(admin.router, prefix="/admin")
 
-@app.get("/signin")
-def render_signin(request: Request):
-    return template.TemplateResponse(
-        request=request,
-        name="signin.html"
-    )
-
-@app.get("/admin/dashboard")
-def render_admin_dashboard(request: Request):
-    return template.TemplateResponse(
-        request=request,
-        name="admin/dashboard.html"
-    )
-
-@app.get("/admin/create")
-def render_admin_create(request: Request):
-    return template.TemplateResponse(
-        request=request,
-        name="admin/create.html"
-    )
-
-@app.get("/admin/update")
-def render_admin_edit(request: Request):
-    return template.TemplateResponse(
-        request=request,
-        name="admin/update.html"
-    )
-
-@app.get("/{path:path}")
+@app.api_route("/{path:path}", methods=["GET", "POST"])
 def catch_all(request: Request):
     return template.TemplateResponse(
         request=request,
