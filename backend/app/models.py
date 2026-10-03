@@ -56,7 +56,12 @@ class ExerciseBase(BaseModel):
 class ExerciseCreate(BaseModel):
     title: str = Field(..., description="ชื่อแบบฝึกหัด Lab")
     description: Optional[str] = Field(None, description="คำอธิบายแบบฝึกหัด หรือโจทย์")
-    ami_id: Optional[str] = Field(None, description="AMI ID (ถ้าไม่ระบุ จะดึงจาก VM Snapshot ปัจจุบันของผู้สอน)")
+    instance_id: Optional[str] = Field(
+        None, description="EC2 Instance ID ของอาจารย์ที่ต้องการทำ Snapshot (ถ้าไม่ระบุ จะดึงจาก VM ปัจจุบันของผู้สอน)"
+    )
+    ami_id: Optional[str] = Field(
+        None, description="AMI ID (ถ้ามี AMI อยู่แล้วและไม่ต้องการทำ Snapshot ใหม่)"
+    )
 
 
 class ExerciseResponse(ExerciseBase):

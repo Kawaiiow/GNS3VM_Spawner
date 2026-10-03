@@ -331,3 +331,70 @@ def terminate_instance(instance_id: str) -> dict:
         "state": state,
         "message": "instance กำลังถูกลบ (terminate) และปล่อยโควตา VM เรียบร้อยแล้ว",
     }
+
+
+def create_instance_image(
+    instance_id: str,
+    name: str,
+    description: str = "",
+    no_reboot: bool = True,
+) -> str:
+    """
+    สั่ง AWS EC2 สร้าง AMI (Snapshot) จาก EC2 Instance
+    - instance_id: รหัส instance ที่ต้องการ snapshot
+    - name: ชื่อของ AMI (ห้ามซ้ำ)
+    - description: คำอธิบาย AMI
+    - no_reboot: True เพื่อไม่ต้องสั่ง restart instance ขณะทำ snapshot
+    คืนค่า ImageId (ami-xxxxxxxxx)
+    """
+    client = get_ec2_client()
+    try:
+        resp = client.create_image(
+            InstanceId=instance_id,
+            Name=name,
+            Description=description,
+            NoReboot=no_reboot,
+            TagSpecifications=[
+                {
+                    "ResourceType": "image",
+                    "Tags": [
+                        {"Key": "Project", "Value": PROJECT_TAG_VALUE},
+                        {"Key": "Name", "Value": name},
+                        {"Key": "SourceInstanceId", "Value": instance_id},
+                    ],
+                }
+            ],
+        )
+        return resp["ImageId"]
+    except ClientError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+def get_image_status(ami_id: str) -> str:
+    """
+    ตรวจสอบสถานะของ AMI บน AWS EC2
+    คืนค่าสถานะ เช่น "pending", "available", "failed", หรือ "not_found"
+    """
+    client = get_ec2_client()
+    try:
+        resp = client.describe_images(ImageIds=[ami_id])
+        images = resp.get("Images", [])
+        if not images:
+            return "not_found"
+        return images[0]["State"]
+    except ClientError as e:
+        if e.response["Error"]["Code"] in ("InvalidAMIID.NotFound", "InvalidAMIID.Malformed"):
+            return "not_found"
+        return "unknown"
+
+
+def deregister_image(ami_id: str) -> None:
+    """
+    ยกเลิกการลงทะเบียน (De-register) AMI บน AWS EC2 เมื่อลบแบบฝึกหัด
+    """
+    client = get_ec2_client()
+    try:
+        client.deregister_image(ImageId=ami_id)
+    except ClientError as e:
+        if e.response["Error"]["Code"] != "InvalidAMIID.NotFound":
+            raise HTTPException(status_code=400, detail=str(e)) from e

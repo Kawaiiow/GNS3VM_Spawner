@@ -135,17 +135,32 @@
 * **Response (200 OK)**: `ExerciseResponse` object
 
 #### `POST /exercises`
-* **คำอธิบาย**: สร้างแบบฝึกหัด Lab ใหม่
+* **คำอธิบาย**: สร้างแบบฝึกหัด Lab ใหม่โดยสามารถทำ Snapshot จาก VM ของผู้สอน หรือระบุ AMI ID ตรงๆ
 * **Authentication**: เฉพาะผู้ใช้ที่มี Role เป็น `instructor` หรือ `admin`
 * **Request Body** (`application/json`):
   ```json
   {
     "title": "Lab 2: BGP Configuration",
     "description": "Lab exercise for eBGP peering",
-    "ami_id": "ami-xxxxxxxxxxxxxxxxx" // (Optional) ถ้าไม่ใส่จะใช้ default AMI
+    "instance_id": "i-0123456789abcdef0", // (Optional) Instance ID ที่ต้องการ Snapshot (ถ้าไม่ระบุ จะดึงจาก active VM ของผู้สอน)
+    "ami_id": "ami-xxxxxxxxxxxxxxxxx" // (Optional) ถ้ามี AMI อยู่แล้วและไม่ต้องการทำ Snapshot ใหม่
   }
   ```
+* **พฤติกรรมในระบบ**:
+  1. หากไม่ได้ส่ง `ami_id` ระบบจะสั่ง AWS EC2 ทำ Snapshot (`create_image`) จากเครื่อง VM ของผู้สอนทันที
+  2. บันทึกข้อมูลลงตาราง `netlab_exercises` พร้อมสถานะ `status = "pending"`
+  3. เมื่อมีคำขอเรียกดู `GET /exercises/{id}` ระบบจะ sync สถานะล่าสุดกับ AWS EC2 หากสร้างเสร็จแล้วจะเปลี่ยนเป็น `"available"` อัตโนมัติ
 * **Response (201 Created)**: `ExerciseResponse` object
+
+#### `DELETE /exercises/{exercise_id}`
+* **คำอธิบาย**: ลบแบบฝึกหัด Lab (De-register AMI บน AWS EC2 และลบ Record ใน DynamoDB)
+* **Authentication**: เฉพาะเจ้าของแบบฝึกหัด (`instructor_id`) หรือผู้ใช้ Role `admin`
+* **Response (200 OK)**:
+  ```json
+  {
+    "message": "Exercise 'ex-0123-uuid' deleted successfully."
+  }
+  ```
 
 ---
 

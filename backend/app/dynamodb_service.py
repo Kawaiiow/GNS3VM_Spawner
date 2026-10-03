@@ -487,3 +487,14 @@ def update_exercise_status(exercise_id: str, status_val: str) -> None:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error updating exercise status: {e.response['Error']['Message']}",
         )
+
+
+def delete_exercise_record(exercise_id: str) -> None:
+    table = get_exercises_table()
+    try:
+        table.delete_item(Key={"exercise_id": exercise_id})
+    except ClientError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting exercise from DynamoDB: {e.response['Error']['Message']}",
+        )

@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
@@ -16,12 +17,14 @@ from app.config import get_settings
 from app.dynamodb_service import (
     create_exercise_record,
     create_user,
+    delete_exercise_record,
     get_exercise_record,
     get_instance_record,
     get_user_by_id,
     get_user_by_identifier,
     list_all_exercises,
     list_all_users,
+    update_exercise_status,
 )
 from app.models import (
     ExerciseCreate,
@@ -132,53 +135,6 @@ def get_my_profile(current_user: UserInDB = Depends(get_current_user)):
     )
 
 
-# ==========================================
-# EXERCISES (LAB TEMPLATES) ENDPOINTS
-# ==========================================
-
-@app.get("/exercises", response_model=ExerciseListResponse)
-def get_exercises(only_active: bool = True):
-    """ดูรายการแบบฝึกหัด Lab ทั้งหมดที่เปิดให้ทำ"""
-    records = list_all_exercises(only_active=only_active)
-    exercises = [ExerciseResponse(**r) for r in records]
-    return ExerciseListResponse(count=len(exercises), exercises=exercises)
-
-
-@app.get("/exercises/{exercise_id}", response_model=ExerciseResponse)
-def get_exercise_detail(exercise_id: str):
-    """ดูรายละเอียดของแบบฝึกหัด Lab"""
-    record = get_exercise_record(exercise_id)
-    if not record:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Exercise '{exercise_id}' not found.",
-        )
-    return ExerciseResponse(**record)
-
-
-@app.post("/exercises", response_model=ExerciseResponse, status_code=201)
-def create_exercise(
-    payload: ExerciseCreate,
-    current_user: UserInDB = Depends(get_current_instructor_or_admin),
-):
-    """สร้างแบบฝึกหัด Lab ใหม่ (เฉพาะ Instructor หรือ Admin)"""
-    settings = get_settings()
-    ami_id = payload.ami_id or settings.default_ami_id
-    item = create_exercise_record(
-        instructor_id=current_user.user_id,
-        title=payload.title,
-        description=payload.description,
-        ami_id=ami_id,
-        status="available",
-        is_active=True,
-    )
-    return ExerciseResponse(**item)
-
-
-# ==========================================
-# INSTANCES (VM) ENDPOINTS
-# ==========================================
-
 def _verify_instance_ownership(instance_id: str, user: UserInDB):
     """ตรวจสอบว่าผู้ใช้เป็นเจ้าของ VM นี้ หรือมีสิทธิ์เป็น admin หรือไม่"""
     if user.role == UserRole.ADMIN:
@@ -196,6 +152,119 @@ def _verify_instance_ownership(instance_id: str, user: UserInDB):
             status_code=status.HTTP_403_FORBIDDEN,
             detail="คุณไม่มีสิทธิ์จัดการ VM ของผู้ใช้อื่น",
         )
+
+
+# ==========================================
+# EXERCISES (LAB TEMPLATES & SNAPSHOTS) ENDPOINTS
+# ==========================================
+
+@app.get("/exercises", response_model=ExerciseListResponse)
+def get_exercises(only_active: bool = True):
+    """ดูรายการแบบฝึกหัด Lab ทั้งหมดที่เปิดให้ทำ"""
+    records = list_all_exercises(only_active=only_active)
+    exercises = [ExerciseResponse(**r) for r in records]
+    return ExerciseListResponse(count=len(exercises), exercises=exercises)
+
+
+@app.get("/exercises/{exercise_id}", response_model=ExerciseResponse)
+def get_exercise_detail(exercise_id: str):
+    """ดูรายละเอียดของแบบฝึกหัด Lab (พร้อม sync สถานะ AMI ถ้ายัง pending)"""
+    record = get_exercise_record(exercise_id)
+    if not record:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Exercise '{exercise_id}' not found.",
+        )
+
+    # Sync สถานะ AMI กับ AWS EC2 หากสถานะยังเป็น pending
+    if record.get("status") == "pending" and record.get("ami_id"):
+        real_status = ec2_service.get_image_status(record["ami_id"])
+        if real_status in ("available", "failed"):
+            update_exercise_status(exercise_id, real_status)
+            record["status"] = real_status
+
+    return ExerciseResponse(**record)
+
+
+@app.post("/exercises", response_model=ExerciseResponse, status_code=201)
+def create_exercise(
+    payload: ExerciseCreate,
+    current_user: UserInDB = Depends(get_current_instructor_or_admin),
+):
+    """
+    สร้างแบบฝึกหัด Lab ใหม่ (เฉพาะ Instructor หรือ Admin)
+    - หากระบุ instance_id หรือมี active_instance_id อยู่ ระบบจะสั่ง AWS EC2 ทำ Snapshot (AMI) จาก VM นั้น
+    - หรือหากมี ami_id อยู่แล้ว ก็สามารถระบุ ami_id โดยตรงได้
+    """
+    target_ami = payload.ami_id
+    initial_status = "available"
+
+    # หากไม่มีการส่ง ami_id มาโดยตรง ให้ทำ Snapshot จาก EC2 VM ของอาจารย์
+    if not target_ami:
+        target_instance_id = payload.instance_id or current_user.active_instance_id
+        if not target_instance_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="กรุณาระบุ instance_id หรือเปิด VM เพื่อสร้างแบบฝึกหัดจาก Snapshot (หรือระบุ ami_id)",
+            )
+
+        _verify_instance_ownership(target_instance_id, current_user)
+
+        sanitized_title = "".join(
+            c for c in payload.title if c.isalnum() or c in ("-", "_")
+        ).strip() or "exercise"
+        img_name = f"ex-{sanitized_title[:20]}-{int(datetime.now().timestamp())}"
+
+        target_ami = ec2_service.create_instance_image(
+            instance_id=target_instance_id,
+            name=img_name,
+            description=payload.description or f"Snapshot exercise for {payload.title}",
+        )
+        initial_status = "pending"
+
+    item = create_exercise_record(
+        instructor_id=current_user.user_id,
+        title=payload.title,
+        description=payload.description,
+        ami_id=target_ami,
+        status=initial_status,
+        is_active=True,
+    )
+    return ExerciseResponse(**item)
+
+
+@app.delete("/exercises/{exercise_id}", status_code=200)
+def delete_exercise(
+    exercise_id: str,
+    current_user: UserInDB = Depends(get_current_instructor_or_admin),
+):
+    """ลบแบบฝึกหัด Lab (เฉพาะเจ้าของแบบฝึกหัด หรือ Admin)"""
+    record = get_exercise_record(exercise_id)
+    if not record:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Exercise '{exercise_id}' not found.",
+        )
+
+    if (
+        current_user.role != UserRole.ADMIN
+        and record.get("instructor_id") != current_user.user_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="คุณไม่มีสิทธิ์ลบแบบฝึกหัดของผู้สอนท่านอื่น",
+        )
+
+    if record.get("ami_id"):
+        ec2_service.deregister_image(record["ami_id"])
+
+    delete_exercise_record(exercise_id)
+    return {"message": f"Exercise '{exercise_id}' deleted successfully."}
+
+
+# ==========================================
+# INSTANCES (VM) ENDPOINTS
+# ==========================================
 
 
 @app.post("/instances", response_model=InstanceInfo, status_code=201)

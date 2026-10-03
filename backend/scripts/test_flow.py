@@ -370,6 +370,119 @@ class TestFastAPIRoutes(unittest.TestCase):
         self.assertEqual(resp.status_code, 201)
         self.assertEqual(resp.json()["exercise_id"], "ex-new")
 
+    @patch("app.auth.get_user_by_id")
+    @patch("app.main.get_instance_record")
+    @patch("app.main.ec2_service.create_instance_image")
+    @patch("app.main.create_exercise_record")
+    def test_create_exercise_snapshot_from_active_instance(
+        self, mock_create_ex, mock_create_img, mock_get_inst, mock_auth_user
+    ):
+        inst_user = dict(self.mock_instructor_dict)
+        inst_user["active_instance_id"] = "i-active-inst-1"
+        mock_auth_user.return_value = inst_user
+        mock_get_inst.return_value = {
+            "instance_id": "i-active-inst-1",
+            "user_id": inst_user["user_id"],
+        }
+        mock_create_img.return_value = "ami-snapshot-ospf"
+        mock_create_ex.return_value = {
+            "exercise_id": "ex-ospf-1",
+            "instructor_id": inst_user["user_id"],
+            "title": "Lab OSPF Snapshot",
+            "description": "Configured topology",
+            "ami_id": "ami-snapshot-ospf",
+            "status": "pending",
+            "is_active": True,
+            "created_at": "2026-10-03T00:00:00Z",
+        }
+
+        headers = {"Authorization": f"Bearer {self.instructor_token}"}
+        resp = self.client.post(
+            "/exercises",
+            json={"title": "Lab OSPF Snapshot", "description": "Configured topology"},
+            headers=headers,
+        )
+        self.assertEqual(resp.status_code, 201)
+        mock_create_img.assert_called_once()
+        self.assertEqual(mock_create_img.call_args[1]["instance_id"], "i-active-inst-1")
+        self.assertEqual(resp.json()["ami_id"], "ami-snapshot-ospf")
+        self.assertEqual(resp.json()["status"], "pending")
+
+    @patch("app.auth.get_user_by_id")
+    def test_create_exercise_fails_without_instance_or_ami(self, mock_auth_user):
+        inst_user = dict(self.mock_instructor_dict)
+        inst_user["active_instance_id"] = None
+        mock_auth_user.return_value = inst_user
+
+        headers = {"Authorization": f"Bearer {self.instructor_token}"}
+        resp = self.client.post(
+            "/exercises",
+            json={"title": "Missing AMI Lab"},
+            headers=headers,
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("กรุณาระบุ instance_id", resp.json()["detail"])
+
+    @patch("app.main.get_exercise_record")
+    @patch("app.main.ec2_service.get_image_status")
+    @patch("app.main.update_exercise_status")
+    def test_get_exercise_detail_syncs_status(
+        self, mock_update_status, mock_get_status, mock_get_rec
+    ):
+        mock_get_rec.return_value = {
+            "exercise_id": "ex-pending-1",
+            "instructor_id": "inst-1",
+            "title": "Pending Lab",
+            "description": "Desc",
+            "ami_id": "ami-pending-1",
+            "status": "pending",
+            "is_active": True,
+            "created_at": "2026-10-03T00:00:00Z",
+        }
+        mock_get_status.return_value = "available"
+
+        resp = self.client.get("/exercises/ex-pending-1")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["status"], "available")
+        mock_update_status.assert_called_once_with("ex-pending-1", "available")
+
+    @patch("app.auth.get_user_by_id")
+    @patch("app.main.get_exercise_record")
+    @patch("app.main.ec2_service.deregister_image")
+    @patch("app.main.delete_exercise_record")
+    def test_delete_exercise_by_owner(
+        self, mock_del_rec, mock_deregister, mock_get_rec, mock_auth_user
+    ):
+        mock_auth_user.return_value = self.mock_instructor_dict
+        mock_get_rec.return_value = {
+            "exercise_id": "ex-del-1",
+            "instructor_id": "inst-uuid-1",
+            "ami_id": "ami-to-del",
+        }
+
+        headers = {"Authorization": f"Bearer {self.instructor_token}"}
+        resp = self.client.delete("/exercises/ex-del-1", headers=headers)
+        self.assertEqual(resp.status_code, 200)
+        mock_deregister.assert_called_once_with("ami-to-del")
+        mock_del_rec.assert_called_once_with("ex-del-1")
+
+    @patch("app.auth.get_user_by_id")
+    @patch("app.main.get_exercise_record")
+    def test_delete_exercise_forbidden_for_other_user(
+        self, mock_get_rec, mock_auth_user
+    ):
+        mock_auth_user.return_value = self.mock_instructor_dict
+        mock_get_rec.return_value = {
+            "exercise_id": "ex-other",
+            "instructor_id": "inst-other-999",
+            "ami_id": "ami-other",
+        }
+
+        headers = {"Authorization": f"Bearer {self.instructor_token}"}
+        resp = self.client.delete("/exercises/ex-other", headers=headers)
+        self.assertEqual(resp.status_code, 403)
+        self.assertIn("คุณไม่มีสิทธิ์ลบแบบฝึกหัด", resp.json()["detail"])
+
 
 if __name__ == "__main__":
     print("[*] Running NetLab DynamoDB (Reduced Schema) Verification Test Suite...")
