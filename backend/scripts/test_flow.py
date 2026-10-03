@@ -18,6 +18,13 @@ from unittest.mock import MagicMock, patch
 # Ensure backend root is in sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+# Provide mock environment variables so test suite runs without requiring real .env
+os.environ.setdefault("AWS_ACCESS_KEY_ID", "mock_key")
+os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "mock_secret")
+os.environ.setdefault("DEFAULT_AMI_ID", "ami-mock")
+os.environ.setdefault("DEFAULT_KEY_NAME", "mock_keyname")
+os.environ.setdefault("DEFAULT_SECURITY_GROUP_ID", "sg-mock")
+
 from botocore.exceptions import ClientError
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
