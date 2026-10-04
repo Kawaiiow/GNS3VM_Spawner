@@ -22,7 +22,8 @@ class UserCreate(UserBase):
 
 class UserResponse(UserBase):
     user_id: str
-    active_instance_id: Optional[str] = None
+    active_instance_id: Optional[str] = None  # Sandbox VM ที่ใช้อยู่ (นักศึกษา)
+    active_exercise_instance_id: Optional[str] = None  # Exercise VM ที่ใช้อยู่ (นักศึกษา)
     created_at: str
     updated_at: str
 
@@ -54,8 +55,8 @@ class ExerciseBase(BaseModel):
 
 
 class ExerciseCreate(BaseModel):
-    title: str = Field(..., description="ชื่อแบบฝึกหัด Lab")
-    description: Optional[str] = Field(None, description="คำอธิบายแบบฝึกหัด หรือโจทย์")
+    title: str = Field(..., min_length=1, description="ชื่อแบบฝึกหัด Lab (จำเป็น)")
+    description: str = Field(..., min_length=1, description="คำอธิบายแบบฝึกหัด หรือโจทย์ (จำเป็น)")
     instance_id: Optional[str] = Field(
         None, description="EC2 Instance ID ของอาจารย์ที่ต้องการทำ Snapshot (ถ้าไม่ระบุ จะดึงจาก VM ปัจจุบันของผู้สอน)"
     )
@@ -99,6 +100,7 @@ class InstanceActionResponse(BaseModel):
     instance_id: str
     state: str
     message: str
+    public_ip: Optional[str] = None
 
 
 class InstanceInfo(BaseModel):
@@ -118,3 +120,37 @@ class InstanceInfo(BaseModel):
 class InstanceListResponse(BaseModel):
     count: int
     instances: list[InstanceInfo]
+
+
+# ==========================================
+# ADMIN / DASHBOARD MODELS
+# ==========================================
+
+class UserUpdate(BaseModel):
+    """ฟิลด์ที่ Admin แก้ไขได้ (ส่งเฉพาะที่ต้องการเปลี่ยน)"""
+
+    username: Optional[str] = Field(None, min_length=1, description="ชื่อผู้ใช้ใหม่")
+    member_id: Optional[str] = Field(None, min_length=1, description="รหัสประจำตัวใหม่")
+    full_name: Optional[str] = Field(None, description="ชื่อ-นามสกุลใหม่")
+    role: Optional[UserRole] = Field(None, description="บทบาทใหม่")
+    password: Optional[str] = Field(None, min_length=6, description="รหัสผ่านใหม่ (รีเซ็ต)")
+
+
+class DashboardInstance(BaseModel):
+    instance_id: str
+    name: Optional[str] = None
+    kind: str = Field(..., description="sandbox | exercise")
+    exercise_id: Optional[str] = None
+    state: Optional[str] = None
+    public_ip: Optional[str] = None
+
+
+class DashboardUserInfo(BaseModel):
+    """หนึ่งแถวใน Dashboard: ผู้ใช้ + Instance (Sandbox/Exercise) ทั้งหมดที่ยังไม่ถูกลบ"""
+
+    user_id: str
+    username: str
+    member_id: str
+    full_name: Optional[str] = None
+    role: UserRole
+    instances: list[DashboardInstance] = Field(default_factory=list)

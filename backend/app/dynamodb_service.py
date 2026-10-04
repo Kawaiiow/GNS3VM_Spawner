@@ -146,6 +146,7 @@ def create_user(
         "full_name": full_name or "",
         "role": role,
         "active_instance_id": None,
+        "active_exercise_instance_id": None,
         "created_at": now,
         "updated_at": now,
     }
@@ -175,19 +176,73 @@ def list_all_users() -> list[dict]:
         )
 
 
+def update_user_fields(user_id: str, fields: dict) -> dict:
+    """แก้ไขฟิลด์ของผู้ใช้ (Admin) คืนค่า item ใหม่ทั้งก้อน"""
+    table = get_users_table()
+    names: dict = {}
+    values: dict = {":now": _now_iso()}
+    sets = ["updated_at = :now"]
+    for key, value in fields.items():
+        names[f"#{key}"] = key
+        values[f":{key}"] = value
+        sets.append(f"#{key} = :{key}")
+    try:
+        resp = table.update_item(
+            Key={"user_id": user_id},
+            UpdateExpression="SET " + ", ".join(sets),
+            ExpressionAttributeNames=names or None,
+            ExpressionAttributeValues=values,
+            ConditionExpression="attribute_exists(user_id)",
+            ReturnValues="ALL_NEW",
+        ) if names else table.update_item(
+            Key={"user_id": user_id},
+            UpdateExpression="SET " + ", ".join(sets),
+            ExpressionAttributeValues=values,
+            ConditionExpression="attribute_exists(user_id)",
+            ReturnValues="ALL_NEW",
+        )
+        return resp["Attributes"]
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="ไม่พบผู้ใช้นี้"
+            )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating user: {e.response['Error']['Message']}",
+        )
+
+
+def delete_user_record(user_id: str) -> None:
+    table = get_users_table()
+    try:
+        table.delete_item(Key={"user_id": user_id})
+    except ClientError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting user: {e.response['Error']['Message']}",
+        )
+
+
 # ==========================================
 # 1-VM PER USER ATOMIC LOCKING
 # ==========================================
 
-def reserve_user_vm_slot(user_id: str) -> None:
+# ช่องล็อกต่อผู้ใช้ (ใช้กับ role student เท่านั้น)
+SANDBOX_SLOT = "active_instance_id"
+EXERCISE_SLOT = "active_exercise_instance_id"
+
+
+def reserve_user_vm_slot(user_id: str, slot: str = SANDBOX_SLOT) -> None:
     table = get_users_table()
     now = _now_iso()
 
     try:
         table.update_item(
             Key={"user_id": user_id},
-            UpdateExpression="SET active_instance_id = :pending, updated_at = :now",
-            ConditionExpression="attribute_not_exists(active_instance_id) OR active_instance_id = :none OR active_instance_id = :null_str",
+            UpdateExpression="SET #slot = :pending, updated_at = :now",
+            ConditionExpression="attribute_not_exists(#slot) OR #slot = :none OR #slot = :null_str",
+            ExpressionAttributeNames={"#slot": slot},
             ExpressionAttributeValues={
                 ":pending": "PENDING_LAUNCH",
                 ":none": None,
@@ -198,10 +253,20 @@ def reserve_user_vm_slot(user_id: str) -> None:
     except ClientError as e:
         if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
             user = get_user_by_id(user_id)
-            active_id = user.get("active_instance_id") if user else "existing VM"
+            active_id = user.get(slot) if user else "existing VM"
+            if slot == EXERCISE_SLOT:
+                detail = (
+                    f"User already owns an active exercise VM ({active_id}). "
+                    "Finish the current exercise (Done) before starting another."
+                )
+            else:
+                detail = (
+                    f"User already owns an active VM instance ({active_id}). "
+                    "Every student is limited to 1 active sandbox VM."
+                )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"User already owns an active VM instance ({active_id}). Every user is limited to 1 active VM.",
+                detail=detail,
             )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -209,13 +274,14 @@ def reserve_user_vm_slot(user_id: str) -> None:
         )
 
 
-def assign_user_vm(user_id: str, instance_id: str) -> None:
+def assign_user_vm(user_id: str, instance_id: str, slot: str = SANDBOX_SLOT) -> None:
     table = get_users_table()
     now = _now_iso()
     try:
         table.update_item(
             Key={"user_id": user_id},
-            UpdateExpression="SET active_instance_id = :inst, updated_at = :now",
+            UpdateExpression="SET #slot = :inst, updated_at = :now",
+            ExpressionAttributeNames={"#slot": slot},
             ExpressionAttributeValues={
                 ":inst": instance_id,
                 ":now": now,
@@ -228,13 +294,14 @@ def assign_user_vm(user_id: str, instance_id: str) -> None:
         )
 
 
-def release_user_vm(user_id: str) -> None:
+def release_user_vm(user_id: str, slot: str = SANDBOX_SLOT) -> None:
     table = get_users_table()
     now = _now_iso()
     try:
         table.update_item(
             Key={"user_id": user_id},
-            UpdateExpression="SET active_instance_id = :none, updated_at = :now",
+            UpdateExpression="SET #slot = :none, updated_at = :now",
+            ExpressionAttributeNames={"#slot": slot},
             ExpressionAttributeValues={
                 ":none": None,
                 ":now": now,
@@ -307,6 +374,7 @@ def update_instance_state(
     state: str,
     public_ip: Optional[str] = None,
     private_ip: Optional[str] = None,
+    clear_public_ip: bool = False,
 ) -> None:
     table = get_instances_table()
     now = _now_iso()
@@ -318,6 +386,10 @@ def update_instance_state(
     if public_ip is not None:
         expr_parts.append("public_ip = :pub_ip")
         attr_values[":pub_ip"] = public_ip
+    elif clear_public_ip:
+        # instance ถูก stop / ไม่มี public IP แล้ว -> เซ็ตเป็น None ใน DB
+        expr_parts.append("public_ip = :pub_ip")
+        attr_values[":pub_ip"] = None
     if private_ip is not None:
         expr_parts.append("private_ip = :priv_ip")
         attr_values[":priv_ip"] = private_ip

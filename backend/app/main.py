@@ -9,6 +9,7 @@ from app.auth import (
     create_access_token,
     get_current_admin_user,
     get_current_instructor_or_admin,
+    get_current_instructor_user,
     get_current_user,
     hash_password,
     verify_password,
@@ -18,15 +19,22 @@ from app.dynamodb_service import (
     create_exercise_record,
     create_user,
     delete_exercise_record,
+    delete_user_record,
     get_exercise_record,
     get_instance_record,
     get_user_by_id,
     get_user_by_identifier,
+    get_user_by_member_id,
+    get_user_by_username,
     list_all_exercises,
     list_all_users,
+    list_instances_by_user,
     update_exercise_status,
+    update_user_fields,
 )
 from app.models import (
+    DashboardInstance,
+    DashboardUserInfo,
     ExerciseCreate,
     ExerciseListResponse,
     ExerciseResponse,
@@ -40,6 +48,7 @@ from app.models import (
     UserInDB,
     UserResponse,
     UserRole,
+    UserUpdate,
 )
 
 app = FastAPI(
@@ -112,6 +121,7 @@ def login(payload: LoginRequest, response: Response):
         full_name=user_dict.get("full_name"),
         role=user_dict["role"],
         active_instance_id=user_dict.get("active_instance_id"),
+        active_exercise_instance_id=user_dict.get("active_exercise_instance_id"),
         created_at=user_dict["created_at"],
         updated_at=user_dict["updated_at"],
     )
@@ -130,6 +140,7 @@ def get_my_profile(current_user: UserInDB = Depends(get_current_user)):
         full_name=fresh_user.get("full_name"),
         role=fresh_user["role"],
         active_instance_id=fresh_user.get("active_instance_id"),
+        active_exercise_instance_id=fresh_user.get("active_exercise_instance_id"),
         created_at=fresh_user["created_at"],
         updated_at=fresh_user["updated_at"],
     )
@@ -153,6 +164,18 @@ def _verify_instance_ownership(instance_id: str, user: UserInDB):
             detail="คุณไม่มีสิทธิ์จัดการ VM ของผู้ใช้อื่น",
         )
 
+@app.post("/auth/logout")
+def logout(response: Response):
+    """
+    ออกจากระบบ (Logout)
+    ทำการลบ HttpOnly cookie ที่เก็บ access_token ทิ้ง
+    """
+    response.delete_cookie(
+        key="access_token",
+        httponly=True,
+        samesite="lax"
+    )
+    return {"message": "ออกจากระบบสำเร็จ (Logged out successfully)"}
 
 # ==========================================
 # EXERCISES (LAB TEMPLATES & SNAPSHOTS) ENDPOINTS
@@ -189,10 +212,10 @@ def get_exercise_detail(exercise_id: str):
 @app.post("/exercises", response_model=ExerciseResponse, status_code=201)
 def create_exercise(
     payload: ExerciseCreate,
-    current_user: UserInDB = Depends(get_current_instructor_or_admin),
+    current_user: UserInDB = Depends(get_current_instructor_user),
 ):
     """
-    สร้างแบบฝึกหัด Lab ใหม่ (เฉพาะ Instructor หรือ Admin)
+    สร้างแบบฝึกหัด Lab ใหม่ (เฉพาะ Instructor, Admin สร้างไม่ได้)
     - หากระบุ instance_id หรือมี active_instance_id อยู่ ระบบจะสั่ง AWS EC2 ทำ Snapshot (AMI) จาก VM นั้น
     - หรือหากมี ami_id อยู่แล้ว ก็สามารถระบุ ami_id โดยตรงได้
     """
@@ -202,6 +225,16 @@ def create_exercise(
     # หากไม่มีการส่ง ami_id มาโดยตรง ให้ทำ Snapshot จาก EC2 VM ของอาจารย์
     if not target_ami:
         target_instance_id = payload.instance_id or current_user.active_instance_id
+        if not target_instance_id:
+            # Instructor ไม่จำกัดจำนวน VM: ถ้าไม่ระบุ instance_id จะใช้เครื่องที่มีอยู่เครื่องเดียว
+            live = list_instances_by_user(current_user.user_id)
+            if len(live) > 1:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="มี VM หลายเครื่อง กรุณาระบุ instance_id ที่ต้องการทำ Snapshot",
+                )
+            if live:
+                target_instance_id = live[0]["instance_id"]
         if not target_instance_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -277,13 +310,20 @@ def create_instance(
     - ผูกกับ user_id ของผู้ใช้ที่ล็อกอินโดยอัตโนมัติ
     - บังคับโควตา 1 VM ต่อ 1 User อย่างเข้มงวดผ่าน DynamoDB Atomic Lock
     - รองรับการเลือก exercise_id เพื่อดึง AMI ของแบบฝึกหัดนั้นมา Launch
+    - student: Sandbox 1 เครื่อง + Exercise 1 เครื่อง | instructor: ไม่จำกัด | admin: สร้างไม่ได้
     """
+    if current_user.role == UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin ไม่สามารถสร้าง VM ได้ (ดู Dashboard และจัดการผู้ใช้เท่านั้น)",
+        )
     return ec2_service.launch_instance(
         user_id=current_user.user_id,
         instance_name=payload.instance_name,
         instance_type=payload.instance_type,
         ami_id=payload.ami_id,
         exercise_id=payload.exercise_id,
+        role=current_user.role.value,
     )
 
 
@@ -363,6 +403,7 @@ def admin_create_user(
         full_name=user_item.get("full_name"),
         role=user_item["role"],
         active_instance_id=user_item.get("active_instance_id"),
+        active_exercise_instance_id=user_item.get("active_exercise_instance_id"),
         created_at=user_item["created_at"],
         updated_at=user_item["updated_at"],
     )
@@ -382,8 +423,160 @@ def admin_list_users(
             full_name=u.get("full_name"),
             role=u["role"],
             active_instance_id=u.get("active_instance_id"),
+            active_exercise_instance_id=u.get("active_exercise_instance_id"),
             created_at=u["created_at"],
             updated_at=u["updated_at"],
         )
         for u in users
     ]
+
+
+def _user_response(u: dict) -> UserResponse:
+    return UserResponse(
+        user_id=u["user_id"],
+        username=u["username"],
+        member_id=u["member_id"],
+        full_name=u.get("full_name"),
+        role=u["role"],
+        active_instance_id=u.get("active_instance_id"),
+        active_exercise_instance_id=u.get("active_exercise_instance_id"),
+        created_at=u["created_at"],
+        updated_at=u["updated_at"],
+    )
+
+
+def _user_has_live_instance(user: dict) -> bool:
+    """True ถ้าผู้ใช้ยังมี instance (Sandbox/Exercise) ที่ยังไม่ terminated"""
+    return len(list_instances_by_user(user["user_id"])) > 0
+
+
+@app.get("/admin/dashboard", response_model=list[DashboardUserInfo])
+def admin_dashboard(
+    current_user: UserInDB = Depends(get_current_admin_user),
+):
+    """
+    Dashboard (เฉพาะ Admin): ผู้ใช้ทุกคน พร้อม Instance (Sandbox/Exercise) ทั้งหมดที่ใช้งานอยู่
+    ข้อมูล state/ip จะ sync กับ EC2 ก่อนแสดงผล
+    """
+    users = list_all_users()
+    by_user: dict = {}
+    for inst in ec2_service.list_instances():
+        if inst.user_id:
+            by_user.setdefault(inst.user_id, []).append(inst)
+
+    rows = []
+    for u in users:
+        rows.append(
+            DashboardUserInfo(
+                user_id=u["user_id"],
+                username=u["username"],
+                member_id=u["member_id"],
+                full_name=u.get("full_name"),
+                role=u["role"],
+                instances=[
+                    DashboardInstance(
+                        instance_id=i.instance_id,
+                        name=i.name,
+                        kind="exercise" if i.exercise_id else "sandbox",
+                        exercise_id=i.exercise_id,
+                        state=i.state,
+                        public_ip=i.public_ip,
+                    )
+                    for i in by_user.get(u["user_id"], [])
+                ],
+            )
+        )
+    return rows
+
+
+@app.patch("/admin/users/{user_id}", response_model=UserResponse)
+def admin_update_user(
+    user_id: str,
+    payload: UserUpdate,
+    current_user: UserInDB = Depends(get_current_admin_user),
+):
+    """
+    แก้ไขบัญชีผู้ใช้ (เฉพาะ Admin) ส่งเฉพาะฟิลด์ที่ต้องการเปลี่ยน
+    - แก้ username / member_id / full_name / role ได้ และใส่ password เพื่อรีเซ็ตรหัสผ่าน
+    - Admin ไม่สามารถลดสิทธิ์ของตัวเองได้
+    - หมายเหตุ: ถ้าเปลี่ยนรหัสผ่าน ต้องอัปเดตใน GNS3 ให้ตรงกันเอง
+    """
+    target = get_user_by_id(user_id)
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ไม่พบผู้ใช้นี้")
+
+    changes = payload.model_dump(exclude_none=True)
+    if not changes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="ไม่มีข้อมูลที่จะแก้ไข"
+        )
+
+    if (
+        user_id == current_user.user_id
+        and "role" in changes
+        and changes["role"] != UserRole.ADMIN
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="ไม่สามารถลดสิทธิ์ admin ของตัวเองได้",
+        )
+
+    if "username" in changes:
+        other = get_user_by_username(changes["username"])
+        if other and other["user_id"] != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Username '{changes['username']}' ถูกใช้แล้ว",
+            )
+    if "member_id" in changes:
+        other = get_user_by_member_id(changes["member_id"])
+        if other and other["user_id"] != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Member ID '{changes['member_id']}' ถูกใช้แล้ว",
+            )
+
+    fields: dict = {}
+    for key in ("username", "member_id", "full_name"):
+        if key in changes:
+            fields[key] = changes[key]
+    if "role" in changes:
+        fields["role"] = changes["role"].value
+    if "password" in changes:
+        fields["password_hash"] = hash_password(changes["password"])
+
+    return _user_response(update_user_fields(user_id, fields))
+
+
+@app.delete("/admin/users/{user_id}", status_code=200)
+def admin_delete_user(
+    user_id: str,
+    current_user: UserInDB = Depends(get_current_admin_user),
+):
+    """
+    ลบบัญชีผู้ใช้ (เฉพาะ Admin)
+    - ลบบัญชีตัวเองไม่ได้
+    - ถ้าบัญชีนี้ยังมี Instance (Sandbox/Exercise) ใช้งานอยู่ จะลบไม่ได้ (409)
+      ต้อง terminate instance ก่อน
+    """
+    if user_id == current_user.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="ไม่สามารถลบบัญชีของตัวเองได้",
+        )
+
+    target = get_user_by_id(user_id)
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ไม่พบผู้ใช้นี้")
+
+    if _user_has_live_instance(target):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"บัญชีนี้ยังมี Instance ใช้งานอยู่ ({target['active_instance_id']}) "
+                f"กรุณา terminate ก่อน (DELETE /instances/{target['active_instance_id']})"
+            ),
+        )
+
+    delete_user_record(user_id)
+    return {"message": f"User '{target.get('username', user_id)}' deleted successfully."}

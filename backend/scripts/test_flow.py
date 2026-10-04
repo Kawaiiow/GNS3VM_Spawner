@@ -364,7 +364,7 @@ class TestFastAPIRoutes(unittest.TestCase):
         headers = {"Authorization": f"Bearer {self.instructor_token}"}
         resp = self.client.post(
             "/exercises",
-            json={"title": "New Lab", "ami_id": "ami-custom"},
+            json={"title": "New Lab", "description": "Lab desc", "ami_id": "ami-custom"},
             headers=headers,
         )
         self.assertEqual(resp.status_code, 201)
@@ -409,17 +409,70 @@ class TestFastAPIRoutes(unittest.TestCase):
         self.assertEqual(resp.json()["status"], "pending")
 
     @patch("app.auth.get_user_by_id")
+    @patch("app.main.ec2_service.launch_instance")
+    def test_admin_cannot_create_instance(self, mock_launch, mock_auth_user):
+        mock_auth_user.return_value = self.mock_admin_dict
+        headers = {"Authorization": f"Bearer {self.admin_token}"}
+        resp = self.client.post("/instances", json={"instance_name": "x"}, headers=headers)
+        self.assertEqual(resp.status_code, 403)
+        mock_launch.assert_not_called()
+
+    @patch("app.auth.get_user_by_id")
+    def test_admin_cannot_create_exercise(self, mock_auth_user):
+        mock_auth_user.return_value = self.mock_admin_dict
+        headers = {"Authorization": f"Bearer {self.admin_token}"}
+        resp = self.client.post(
+            "/exercises",
+            json={"title": "T", "description": "D", "ami_id": "ami-x"},
+            headers=headers,
+        )
+        self.assertEqual(resp.status_code, 403)
+
+    @patch("app.auth.get_user_by_id")
+    @patch("app.main.ec2_service.launch_instance")
+    def test_launch_passes_role_for_limit_rules(self, mock_launch, mock_auth_user):
+        mock_launch.return_value = InstanceInfo(
+            instance_id="i-1", state="pending", user_id="u"
+        )
+        for role_dict, token, expected in (
+            (self.mock_student_dict, self.student_token, "student"),
+            (self.mock_instructor_dict, self.instructor_token, "instructor"),
+        ):
+            mock_auth_user.return_value = role_dict
+            resp = self.client.post(
+                "/instances",
+                json={"instance_name": "vm"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            self.assertEqual(resp.status_code, 201)
+            self.assertEqual(mock_launch.call_args.kwargs["role"], expected)
+
+    @patch("app.auth.get_user_by_id")
+    def test_create_exercise_requires_title_and_description(self, mock_auth_user):
+        mock_auth_user.return_value = self.mock_instructor_dict
+        headers = {"Authorization": f"Bearer {self.instructor_token}"}
+        resp = self.client.post(
+            "/exercises", json={"title": "No Desc", "ami_id": "ami-x"}, headers=headers
+        )
+        self.assertEqual(resp.status_code, 422)
+        resp = self.client.post(
+            "/exercises", json={"description": "No title", "ami_id": "ami-x"}, headers=headers
+        )
+        self.assertEqual(resp.status_code, 422)
+
+    @patch("app.auth.get_user_by_id")
     def test_create_exercise_fails_without_instance_or_ami(self, mock_auth_user):
         inst_user = dict(self.mock_instructor_dict)
         inst_user["active_instance_id"] = None
         mock_auth_user.return_value = inst_user
 
         headers = {"Authorization": f"Bearer {self.instructor_token}"}
-        resp = self.client.post(
-            "/exercises",
-            json={"title": "Missing AMI Lab"},
-            headers=headers,
-        )
+        with patch("app.main.list_instances_by_user", return_value=[]):
+            resp = self.client.post(
+                "/exercises",
+                json={"title": "Missing AMI Lab", "description": "desc"},
+                headers=headers,
+            )
         self.assertEqual(resp.status_code, 400)
         self.assertIn("กรุณาระบุ instance_id", resp.json()["detail"])
 

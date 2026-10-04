@@ -14,20 +14,24 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import boto3
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, WaiterError
 from fastapi import HTTPException
 
 from app.config import get_settings
 from app.dynamodb_service import (
+    EXERCISE_SLOT,
+    SANDBOX_SLOT,
     assign_user_vm,
     create_instance_record,
     get_exercise_record,
     get_instance_record,
+    get_user_by_id,
     list_all_instances as db_list_all_instances,
     list_instances_by_user as db_list_instances_by_user,
     mark_instance_terminated,
     release_user_vm,
     reserve_user_vm_slot,
+    update_exercise_status,
     update_instance_state,
 )
 from app.models import InstanceInfo
@@ -98,7 +102,14 @@ def launch_instance(
     instance_type: Optional[str] = None,
     ami_id: Optional[str] = None,
     exercise_id: Optional[str] = None,
+    role: Optional[str] = None,
 ) -> InstanceInfo:
+    """
+    กฎจำนวน VM:
+    - student:    Sandbox 1 เครื่อง + Exercise 1 เครื่อง (ล็อกแยกกัน)
+    - instructor: ไม่จำกัด
+    (admin สร้าง VM ไม่ได้ ถูกบล็อกที่ชั้น API)
+    """
     settings = get_settings()
     client = get_ec2_client()
 
@@ -111,16 +122,41 @@ def launch_instance(
                 status_code=400,
                 detail=f"Exercise '{exercise_id}' not found or inactive.",
             )
+        # Snapshot ต้องพร้อมใช้งาน (available) ก่อนถึงจะสร้าง VM จากแบบฝึกหัดนี้ได้
+        ex_status = exercise.get("status", "available")
+        if ex_status != "available":
+            real_status = (
+                get_image_status(exercise["ami_id"])
+                if exercise.get("ami_id")
+                else "unknown"
+            )
+            if real_status in ("available", "failed"):
+                update_exercise_status(exercise_id, real_status)
+            if real_status != "available":
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "แบบฝึกหัดนี้ยังไม่พร้อมใช้งาน "
+                        f"(snapshot สถานะ: {real_status}) กรุณารอสักครู่แล้วลองใหม่"
+                    ),
+                )
         if not resolved_ami:
             resolved_ami = exercise.get("ami_id")
 
-    # 1. Atomic reservation in DynamoDB: checks if user already has an active VM
-    reserve_user_vm_slot(user_id)
+    # 1. Atomic reservation in DynamoDB (เฉพาะ student) แยกช่อง Sandbox / Exercise
+    slot = EXERCISE_SLOT if exercise_id else SANDBOX_SLOT
+    limited = (role or "student") == "student"
+    if limited:
+        reserve_user_vm_slot(user_id, slot)
+
+    def _rollback():
+        if limited:
+            release_user_vm(user_id, slot)
 
     # 2. Check project concurrent instance limits
     try:
         if _count_active_project_instances(client) >= settings.max_concurrent_instances:
-            release_user_vm(user_id)
+            _rollback()
             raise HTTPException(
                 status_code=429,
                 detail=(
@@ -131,7 +167,7 @@ def launch_instance(
             )
     except Exception as e:
         if not isinstance(e, HTTPException):
-            release_user_vm(user_id)
+            _rollback()
         raise e
 
     target_ami = resolved_ami or settings.default_ami_id
@@ -174,7 +210,7 @@ def launch_instance(
         )
     except ClientError as e:
         # Rollback reservation in DynamoDB if EC2 creation fails
-        release_user_vm(user_id)
+        _rollback()
         raise HTTPException(status_code=400, detail=str(e)) from e
 
     instance = resp["Instances"][0]
@@ -195,8 +231,9 @@ def launch_instance(
         launch_time=now_iso,
     )
 
-    # 4. Finalize user's active_instance_id
-    assign_user_vm(user_id, instance_id)
+    # 4. Finalize ช่องล็อกของ student (instructor ไม่มีล็อก)
+    if limited:
+        assign_user_vm(user_id, instance_id, slot)
 
     return InstanceInfo(
         instance_id=instance_id,
@@ -246,7 +283,9 @@ def list_instances(
                         "private_ip": priv_ip,
                     }
                     # Update DynamoDB with latest state and IPs
-                    update_instance_state(iid, istate, pub_ip, priv_ip)
+                    update_instance_state(
+                        iid, istate, pub_ip, priv_ip, clear_public_ip=pub_ip is None
+                    )
         except ClientError:
             pass  # Fallback to DynamoDB record if describe fails
 
@@ -276,6 +315,19 @@ def get_instance_details(instance_id: str) -> Optional[dict]:
     return get_instance_record(instance_id)
 
 
+def _sync_instance_from_ec2(client, instance_id: str) -> tuple[str, Optional[str]]:
+    """อ่านสถานะ + IP จริงจาก EC2 แล้วบันทึกลง DynamoDB คืนค่า (state, public_ip)"""
+    resp = client.describe_instances(InstanceIds=[instance_id])
+    inst = resp["Reservations"][0]["Instances"][0]
+    state = inst["State"]["Name"]
+    pub_ip = inst.get("PublicIpAddress")
+    priv_ip = inst.get("PrivateIpAddress")
+    update_instance_state(
+        instance_id, state, pub_ip, priv_ip, clear_public_ip=pub_ip is None
+    )
+    return state, pub_ip
+
+
 def start_instance(instance_id: str) -> dict:
     client = get_ec2_client()
     try:
@@ -283,13 +335,26 @@ def start_instance(instance_id: str) -> dict:
     except ClientError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     state = resp["StartingInstances"][0]["CurrentState"]["Name"]
-
-    # Sync state in DynamoDB
     update_instance_state(instance_id, state)
+
+    # รอให้เครื่องเป็น running เพื่อให้ได้ public IP ใหม่ แล้วบันทึกลง DB ก่อนตอบกลับ
+    public_ip: Optional[str] = None
+    try:
+        client.get_waiter("instance_running").wait(
+            InstanceIds=[instance_id],
+            WaiterConfig={"Delay": 3, "MaxAttempts": 40},
+        )
+        state, public_ip = _sync_instance_from_ec2(client, instance_id)
+    except (WaiterError, ClientError):
+        pass  # ยังไม่พร้อม: ตอบ state ปัจจุบัน แล้วให้ GET /instances sync ภายหลัง
+
     return {
         "instance_id": instance_id,
         "state": state,
-        "message": "instance กำลังเริ่มทำงาน",
+        "public_ip": public_ip,
+        "message": (
+            "instance เริ่มทำงานแล้ว" if state == "running" else "instance กำลังเริ่มทำงาน"
+        ),
     }
 
 
@@ -301,11 +366,12 @@ def stop_instance(instance_id: str) -> dict:
         raise HTTPException(status_code=400, detail=str(e)) from e
     state = resp["StoppingInstances"][0]["CurrentState"]["Name"]
 
-    # Sync state in DynamoDB
-    update_instance_state(instance_id, state)
+    # Public IP จะถูกปล่อยเมื่อ stop -> เซ็ต public_ip เป็น None ใน DB ทันที
+    update_instance_state(instance_id, state, clear_public_ip=True)
     return {
         "instance_id": instance_id,
         "state": state,
+        "public_ip": None,
         "message": "instance กำลังปิดเครื่อง",
     }
 
@@ -321,10 +387,14 @@ def terminate_instance(instance_id: str) -> dict:
     # 1. Update DynamoDB instance record as terminated
     mark_instance_terminated(instance_id)
 
-    # 2. Free user's active_instance_id slot in DynamoDB so they can launch a new VM
+    # 2. คืนช่องล็อกที่ผูกกับ instance นี้ (Sandbox หรือ Exercise) เพื่อให้สร้างใหม่ได้
     instance_rec = get_instance_record(instance_id)
     if instance_rec and instance_rec.get("user_id"):
-        release_user_vm(instance_rec["user_id"])
+        owner = get_user_by_id(instance_rec["user_id"])
+        if owner:
+            for slot in (SANDBOX_SLOT, EXERCISE_SLOT):
+                if owner.get(slot) == instance_id:
+                    release_user_vm(owner["user_id"], slot)
 
     return {
         "instance_id": instance_id,

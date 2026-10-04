@@ -144,3 +144,15 @@ async def get_current_instructor_or_admin(
             detail="Instructor or Admin privileges required.",
         )
     return current_user
+
+
+async def get_current_instructor_user(
+    current_user: UserInDB = Depends(get_current_user),
+) -> UserInDB:
+    """เฉพาะ Instructor (Admin สร้างแบบฝึกหัดไม่ได้)"""
+    if current_user.role != UserRole.INSTRUCTOR:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only instructors can create exercises.",
+        )
+    return current_user
