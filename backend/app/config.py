@@ -27,8 +27,11 @@ class Settings(BaseSettings):
     )
 
     # AWS credentials & region
-    aws_access_key_id: str
-    aws_secret_access_key: str
+    # Optional: ถ้ารันบน EC2 ที่แนบ Instance Profile (LabInstanceProfile) ไม่ต้องใส่
+    # boto3 จะใช้ credentials ของ role เองและหมุนเวียนให้อัตโนมัติ (ไม่หมดอายุตาม lab session)
+    # ถ้ารันบนเครื่องตัวเอง (dev) ยังต้องใส่ key + session token เหมือนเดิม
+    aws_access_key_id: Optional[str] = None
+    aws_secret_access_key: Optional[str] = None
 
     # >>> LEARNER LAB ONLY <<<
     # Session token ที่ได้มาพร้อมกับ Access Key/Secret จากหน้า "AWS Details"
@@ -76,6 +79,15 @@ class Settings(BaseSettings):
     exercises_table_name: str = "netlab_exercises"
     dynamodb_endpoint_url: Optional[str] = None
 
+    # S3 สำหรับเก็บ Snapshot แบบฝึกหัด (ไฟล์ .gns3project ที่ export จาก GNS3)
+    # bucket ต้องเป็น private; VM นักศึกษาดาวน์โหลดผ่าน presigned URL อายุสั้นเท่านั้น
+    snapshots_bucket: Optional[str] = None
+    snapshots_prefix: str = "exercises"
+    snapshot_url_expires: int = 3600   # วินาที: อายุ presigned URL ที่ฝังใน UserData ตอน launch
+    # การคุย GNS3 REST API ของ VM อาจารย์ (ตอน export)
+    gns3_api_port: int = 3080
+    gns3_prefer_private_ip: bool = True   # backend อยู่ VPC เดียวกับ VM -> ลอง private IP ก่อน
+    gns3_export_timeout: int = 1800       # วินาที: รอรับไฟล์ export สูงสุดต่อ chunk/คำสั่ง
     # JWT Authentication
     jwt_secret_key: str = "netlab-super-secret-key-change-in-env-file"
     jwt_algorithm: str = "HS256"

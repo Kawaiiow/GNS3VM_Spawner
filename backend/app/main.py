@@ -1,10 +1,11 @@
+import uuid
 from datetime import datetime
 from typing import Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
+from fastapi import Depends, BackgroundTasks, FastAPI, HTTPException, Query, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 
-from app import ec2_service
+from app import ec2_service, gns3_service, s3_service
 from app.auth import (
     create_access_token,
     get_current_admin_user,
@@ -200,56 +201,82 @@ def get_exercise_detail(exercise_id: str):
 @app.post("/exercises", response_model=ExerciseResponse, status_code=201)
 def create_exercise(
     payload: ExerciseCreate,
+    background_tasks: BackgroundTasks,
     current_user: UserInDB = Depends(get_current_instructor_user),
 ):
     """
     สร้างแบบฝึกหัด Lab ใหม่ (เฉพาะ Instructor, Admin สร้างไม่ได้)
-    - หากระบุ instance_id หรือมี active_instance_id อยู่ ระบบจะสั่ง AWS EC2 ทำ Snapshot (AMI) จาก VM นั้น
-    - หรือหากมี ami_id อยู่แล้ว ก็สามารถระบุ ami_id โดยตรงได้
+    - ค่าเริ่มต้น: Export โปรเจ็ค GNS3 (.gns3project) จาก VM ของอาจารย์ขึ้น S3
+      * ระบุ instance_id (หรือใช้ VM เดียวที่มี) และ project_id (หรือใช้โปรเจ็คเดียวที่มี)
+      * ต้อง stop node ทุกตัวในโปรเจ็คก่อน export (GNS3 ไม่ยอม export โปรเจ็คที่กำลังรัน)
+      * export ทำเบื้องหลัง: status = pending -> available | failed (ดู status_detail)
+    - หากระบุ ami_id: ผูกกับ AMI ที่มีอยู่แล้วโดยตรง (ไม่ export)
     """
-    target_ami = payload.ami_id
-    initial_status = "available"
+    if payload.ami_id:
+        item = create_exercise_record(
+            instructor_id=current_user.user_id,
+            title=payload.title,
+            description=payload.description,
+            ami_id=payload.ami_id,
+            status="available",
+            is_active=True,
+        )
+        return ExerciseResponse(**item)
 
-    # หากไม่มีการส่ง ami_id มาโดยตรง ให้ทำ Snapshot จาก EC2 VM ของอาจารย์
-    if not target_ami:
-        target_instance_id = payload.instance_id or current_user.active_instance_id
-        if not target_instance_id:
-            # Instructor ไม่จำกัดจำนวน VM: ถ้าไม่ระบุ instance_id จะใช้เครื่องที่มีอยู่เครื่องเดียว
-            live = list_instances_by_user(current_user.user_id)
-            if len(live) > 1:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="มี VM หลายเครื่อง กรุณาระบุ instance_id ที่ต้องการทำ Snapshot",
-                )
-            if live:
-                target_instance_id = live[0]["instance_id"]
-        if not target_instance_id:
+    settings = get_settings()
+    if not settings.snapshots_bucket:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="ยังไม่ได้ตั้งค่า SNAPSHOTS_BUCKET ใน .env",
+        )
+
+    target_instance_id = payload.instance_id or current_user.active_instance_id
+    if not target_instance_id:
+        # Instructor ไม่จำกัดจำนวน VM: ถ้าไม่ระบุ instance_id จะใช้เครื่องที่มีอยู่เครื่องเดียว
+        live = list_instances_by_user(current_user.user_id)
+        if len(live) > 1:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="กรุณาระบุ instance_id หรือเปิด VM เพื่อสร้างแบบฝึกหัดจาก Snapshot (หรือระบุ ami_id)",
+                detail="มี VM หลายเครื่อง กรุณาระบุ instance_id ที่ต้องการ export",
             )
-
-        _verify_instance_ownership(target_instance_id, current_user)
-
-        sanitized_title = "".join(
-            c for c in payload.title if c.isalnum() or c in ("-", "_")
-        ).strip() or "exercise"
-        img_name = f"ex-{sanitized_title[:20]}-{int(datetime.now().timestamp())}"
-
-        target_ami = ec2_service.create_instance_image(
-            instance_id=target_instance_id,
-            name=img_name,
-            description=payload.description or f"Snapshot exercise for {payload.title}",
+        if live:
+            target_instance_id = live[0]["instance_id"]
+    if not target_instance_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="กรุณาระบุ instance_id หรือเปิด VM เพื่อสร้างแบบฝึกหัด (หรือระบุ ami_id)",
         )
-        initial_status = "pending"
 
+    _verify_instance_ownership(target_instance_id, current_user)
+    instance_rec = get_instance_record(target_instance_id)
+    if not instance_rec:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"ไม่พบข้อมูล instance {target_instance_id}",
+        )
+
+    # ตรวจสอบเบื้องต้นแบบ synchronous (VM เปิดอยู่, รหัสผ่านถูก, เลือกโปรเจ็คได้) แล้วค่อย export เบื้องหลัง
+    projects = gns3_service.list_projects(instance_rec)
+    project = gns3_service.pick_project(projects, payload.project_id)
+
+    exercise_id = str(uuid.uuid4())
+    s3_key = s3_service.build_exercise_key(exercise_id)
     item = create_exercise_record(
+        exercise_id=exercise_id,
         instructor_id=current_user.user_id,
         title=payload.title,
         description=payload.description,
-        ami_id=target_ami,
-        status=initial_status,
+        s3_key=s3_key,
+        project_name=project["name"],
+        status="pending",
         is_active=True,
+    )
+    background_tasks.add_task(
+        gns3_service.export_exercise_to_s3,
+        exercise_id,
+        instance_rec,
+        project["project_id"],
+        s3_key,
     )
     return ExerciseResponse(**item)
 
@@ -278,6 +305,9 @@ def delete_exercise(
 
     if record.get("ami_id"):
         ec2_service.deregister_image(record["ami_id"])
+
+    if record.get("s3_key"):
+        s3_service.delete_object(record["s3_key"])
 
     delete_exercise_record(exercise_id)
     return {"message": f"Exercise '{exercise_id}' deleted successfully."}

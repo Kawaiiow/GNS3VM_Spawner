@@ -50,7 +50,9 @@ class TokenResponse(BaseModel):
 class ExerciseBase(BaseModel):
     title: str = Field(..., description="ชื่อแบบฝึกหัด Lab")
     description: Optional[str] = Field(None, description="คำอธิบายแบบฝึกหัด หรือโจทย์")
-    ami_id: str = Field(..., description="AWS AMI Image ID ที่เป็น Snapshot ของแบบฝึกหัดนี้")
+    ami_id: Optional[str] = Field(
+        None, description="AWS AMI ID (เฉพาะแบบฝึกหัดที่ผูกกับ AMI ตรงๆ; แบบ export ไป S3 จะเป็น null)"
+    )
     is_active: bool = Field(default=True, description="สถานะเปิดให้นักศึกษาใช้งานหรือไม่")
 
 
@@ -59,6 +61,9 @@ class ExerciseCreate(BaseModel):
     description: str = Field(..., min_length=1, description="คำอธิบายแบบฝึกหัด หรือโจทย์ (จำเป็น)")
     instance_id: Optional[str] = Field(
         None, description="EC2 Instance ID ของอาจารย์ที่ต้องการทำ Snapshot (ถ้าไม่ระบุ จะดึงจาก VM ปัจจุบันของผู้สอน)"
+    )
+    project_id: Optional[str] = Field(
+        None, description="GNS3 project ID ที่ต้องการ export (ถ้าไม่ระบุและมีโปรเจ็คเดียว จะใช้โปรเจ็คนั้น)"
     )
     ami_id: Optional[str] = Field(
         None, description="AMI ID (ถ้ามี AMI อยู่แล้วและไม่ต้องการทำ Snapshot ใหม่)"
@@ -69,6 +74,9 @@ class ExerciseResponse(ExerciseBase):
     exercise_id: str
     instructor_id: str
     status: str = Field(..., description="สถานะ AMI snapshot: pending | available | failed")
+    s3_key: Optional[str] = Field(None, description="S3 object key ของไฟล์ .gns3project")
+    project_name: Optional[str] = Field(None, description="ชื่อโปรเจ็ค GNS3 ที่ export")
+    status_detail: Optional[str] = Field(None, description="รายละเอียดเมื่อ status = failed")
     created_at: str
 
 

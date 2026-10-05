@@ -476,13 +476,16 @@ def list_all_instances(include_terminated: bool = False) -> list[dict]:
 def create_exercise_record(
     instructor_id: str,
     title: str,
-    ami_id: str,
+    ami_id: Optional[str] = None,
     description: Optional[str] = None,
     status: str = "available",
     is_active: bool = True,
+    exercise_id: Optional[str] = None,
+    s3_key: Optional[str] = None,
+    project_name: Optional[str] = None,
 ) -> dict:
     table = get_exercises_table()
-    exercise_id = str(uuid.uuid4())
+    exercise_id =  exercise_id or str(uuid.uuid4())
     now = _now_iso()
     item = {
         "exercise_id": exercise_id,
@@ -495,6 +498,13 @@ def create_exercise_record(
         "created_at": now,
         "updated_at": now,
     }
+    # เก็บเฉพาะฟิลด์ที่มีค่า (แบบฝึกหัดอาจเป็น AMI หรือ S3 อย่างใดอย่างหนึ่ง)
+    if ami_id:
+        item["ami_id"] = ami_id
+    if s3_key:
+        item["s3_key"] = s3_key
+    if project_name:
+        item["project_name"] = project_name    
     try:
         table.put_item(Item=item)
         return item
@@ -549,15 +559,24 @@ def list_exercises_by_instructor(instructor_id: str) -> list[dict]:
         )
 
 
-def update_exercise_status(exercise_id: str, status_val: str) -> None:
+def update_exercise_status(
+    exercise_id: str, status_val: str, detail: Optional[str] = None
+) -> None:
     table = get_exercises_table()
     now = _now_iso()
+    expr = "SET #st = :s, updated_at = :now"
+    values: dict[str, Any] = {":s": status_val, ":now": now}
+    if detail:
+        expr += ", status_detail = :d"
+        values[":d"] = detail
+    elif status_val == "available":
+        expr += " REMOVE status_detail"  # ล้างข้อความ error เก่า
     try:
         table.update_item(
             Key={"exercise_id": exercise_id},
-            UpdateExpression="SET #st = :s, updated_at = :now",
+            UpdateExpression=expr,
             ExpressionAttributeNames={"#st": "status"},
-            ExpressionAttributeValues={":s": status_val, ":now": now},
+            ExpressionAttributeValues=values,
         )
     except ClientError as e:
         raise HTTPException(
