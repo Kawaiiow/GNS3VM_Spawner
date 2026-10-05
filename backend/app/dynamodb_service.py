@@ -329,6 +329,8 @@ def create_instance_record(
     public_ip: Optional[str] = None,
     private_ip: Optional[str] = None,
     launch_time: Optional[str] = None,
+    gns3_user: Optional[str] = None,
+    gns3_password: Optional[str] = None,
 ) -> dict:
     table = get_instances_table()
     now = _now_iso()
@@ -347,6 +349,9 @@ def create_instance_record(
         "updated_at": now,
         "terminated_at": None,
     }
+    if gns3_user and gns3_password:
+        item["gns3_user"] = gns3_user
+        item["gns3_password"] = gns3_password
     try:
         table.put_item(Item=item)
         return item

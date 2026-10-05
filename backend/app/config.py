@@ -62,6 +62,14 @@ class Settings(BaseSettings):
     # Learner Lab มี budget จำกัดต่อ lab (มักไม่กี่สิบ USD) แนะนำตั้งค่าต่ำไว้ก่อน
     max_concurrent_instances: int = 3
 
+    # GNS3 server login ต่อ VM (GNS3 2.2 มี HTTP basic auth ได้ 1 user ต่อ server)
+    # ตอน launch ระบบจะสุ่มรหัสผ่านใหม่ให้ VM แต่ละเครื่อง ผ่าน EC2 UserData (first boot)
+    # แล้วเก็บไว้ใน DynamoDB และส่งให้เจ้าของ VM เท่านั้น
+    gns3_set_vm_password: bool = True
+    gns3_vm_user: str = "gns3"
+    gns3_config_path: str = "/home/ubuntu/.config/GNS3/2.2/gns3_server.conf"
+    gns3_service_name: str = "gns3-server"
+
     # DynamoDB Tables & Endpoint
     users_table_name: str = "netlab_users"
     instances_table_name: str = "netlab_instances"

@@ -10,6 +10,8 @@ ec2_service.py
 - จัดการ 1-VM per user constraint ร่วมกับ dynamodb_service
 """
 
+import secrets
+import string
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -79,6 +81,36 @@ def _instance_to_info(instance: dict) -> InstanceInfo:
         user_id=_get_tag(tags, "UserId"),
         exercise_id=_get_tag(tags, "ExerciseId"),
         created_at=launch_time_str,
+    )
+
+
+def _generate_vm_password(length: int = 16) -> str:
+    """สุ่มรหัสผ่านตัวอักษร+ตัวเลขเท่านั้น (ปลอดภัยต่อ sed / ไฟล์ ini)"""
+    alphabet = string.ascii_letters + string.digits
+    return "".join(secrets.choice(alphabet) for _ in range(length))
+
+
+_GNS3_USER_DATA_TEMPLATE = r"""#!/bin/bash
+# NetLab: set a unique GNS3 login for this VM (runs on first boot)
+CONF="__CONF__"
+for i in $(seq 1 60); do [ -f "$CONF" ] && break; sleep 2; done
+if [ -f "$CONF" ]; then
+  sed -i -E '/^(auth|user|password)[[:space:]]*=/d' "$CONF"
+  sed -i -e '/^\[Server\]/a password = __PASSWORD__' \
+         -e '/^\[Server\]/a user = __USER__' \
+         -e '/^\[Server\]/a auth = True' "$CONF"
+  systemctl restart __SERVICE__
+fi
+"""
+
+
+def _build_gns3_user_data(user: str, password: str) -> str:
+    settings = get_settings()
+    return (
+        _GNS3_USER_DATA_TEMPLATE.replace("__CONF__", settings.gns3_config_path)
+        .replace("__USER__", user)
+        .replace("__PASSWORD__", password)
+        .replace("__SERVICE__", settings.gns3_service_name)
     )
 
 
@@ -187,6 +219,14 @@ def launch_instance(
             "Name": settings.instance_profile_name
         }
 
+    # รหัสผ่าน GNS3 เฉพาะ VM เครื่องนี้ (ตั้งผ่าน UserData ตอน first boot)
+    gns3_user: Optional[str] = None
+    gns3_password: Optional[str] = None
+    if settings.gns3_set_vm_password:
+        gns3_user = settings.gns3_vm_user
+        gns3_password = _generate_vm_password()
+        run_instances_kwargs["UserData"] = _build_gns3_user_data(gns3_user, gns3_password)
+
     now_iso = datetime.now(timezone.utc).isoformat()
 
     tags = [
@@ -229,6 +269,8 @@ def launch_instance(
         public_ip=instance.get("PublicIpAddress"),
         private_ip=instance.get("PrivateIpAddress"),
         launch_time=now_iso,
+        gns3_user=gns3_user,
+        gns3_password=gns3_password,
     )
 
     # 4. Finalize ช่องล็อกของ student (instructor ไม่มีล็อก)
@@ -246,12 +288,15 @@ def launch_instance(
         private_ip=instance.get("PrivateIpAddress"),
         launch_time=now_iso,
         created_at=now_iso,
+        gns3_user=gns3_user,
+        gns3_password=gns3_password,
     )
 
 
 def list_instances(
     user_id: Optional[str] = None,
     sync_with_ec2: bool = True,
+    include_credentials: bool = False,
 ) -> list[InstanceInfo]:
     """
     List instances from DynamoDB (or EC2) with updated runtime status.
@@ -306,6 +351,8 @@ def list_instances(
                 launch_time=r.get("launch_time"),
                 created_at=r.get("created_at"),
                 terminated_at=r.get("terminated_at"),
+                gns3_user=r.get("gns3_user") if include_credentials else None,
+                gns3_password=r.get("gns3_password") if include_credentials else None,
             )
         )
     return results

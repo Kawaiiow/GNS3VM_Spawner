@@ -115,6 +115,9 @@ class InstanceInfo(BaseModel):
     launch_time: Optional[str] = None
     created_at: Optional[str] = None
     terminated_at: Optional[str] = None
+    # Login ของ GNS3 server บน VM นี้ (ส่งให้เจ้าของ VM เท่านั้น)
+    gns3_user: Optional[str] = None
+    gns3_password: Optional[str] = None
 
 
 class InstanceListResponse(BaseModel):

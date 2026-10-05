@@ -164,18 +164,6 @@ def _verify_instance_ownership(instance_id: str, user: UserInDB):
             detail="คุณไม่มีสิทธิ์จัดการ VM ของผู้ใช้อื่น",
         )
 
-@app.post("/auth/logout")
-def logout(response: Response):
-    """
-    ออกจากระบบ (Logout)
-    ทำการลบ HttpOnly cookie ที่เก็บ access_token ทิ้ง
-    """
-    response.delete_cookie(
-        key="access_token",
-        httponly=True,
-        samesite="lax"
-    )
-    return {"message": "ออกจากระบบสำเร็จ (Logged out successfully)"}
 
 # ==========================================
 # EXERCISES (LAB TEMPLATES & SNAPSHOTS) ENDPOINTS
@@ -339,7 +327,10 @@ def get_instances(
     if current_user.role == UserRole.ADMIN:
         instances = ec2_service.list_instances()
     else:
-        instances = ec2_service.list_instances(user_id=current_user.user_id)
+        # ผู้ใช้เห็นรหัสผ่าน GNS3 ของ VM ตัวเองเท่านั้น (Admin ไม่เห็น)
+        instances = ec2_service.list_instances(
+            user_id=current_user.user_id, include_credentials=True
+        )
 
     return InstanceListResponse(count=len(instances), instances=instances)
 
