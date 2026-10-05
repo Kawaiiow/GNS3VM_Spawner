@@ -1,14 +1,27 @@
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from router import user, admin
+from router import admin
 import uvicorn
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 template = Jinja2Templates(directory="template")
 
-app.include_router(user.router)
+@app.get("/")
+def render_home(request: Request):
+    return template.TemplateResponse(
+        request=request,
+        name="home.html"
+    )
+
+@app.get("/signin")
+def render_signin(request: Request):
+    return template.TemplateResponse(
+        request=request,
+        name="signin.html"
+    )
+
 app.include_router(admin.router, prefix="/admin")
 
 @app.api_route("/{path:path}", methods=["GET", "POST"])
