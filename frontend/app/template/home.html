@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    {% include "component/head.html" %}
+    <title>หน้าหลัก - NetLab</title>
+</head>
+<body class="bg-white">
+    {% include "component/navbar.html" %}
+    <div class="flex justify-center items-center min-h-screen w-full">
+        <div class="text-center max-w-6xl p-6">
+            <img src="../static/animation/netlab.gif" class="inline-block max-h-60 w-auto mb-12">
+            <p class="max-w-3xl text-gray-800 text-2xl mb-6">ยกระดับทักษะ Networking ด้วยแล็ปเสมือนจริงบน <a class="text-cyan-600">GNS3</a> ฝึกฝนจริง ได้ทุกที่ทุกเวลา ผ่าน <a class="text-amber-600">Amazon Web Services</a></p>
+            <div class="flex gap-4 justify-center">
+                <a href="/signin" class="bg-gray-800 hover:bg-gray-700 transition-colors duration-200 ease-in-out text-white px-4 py-3 rounded-xl text-sm">🦎 เริ่มต้นทำแล็บ</a>
+                <a onclick="document.getElementById('about').scrollIntoView({ behavior: 'smooth' });" class="border px-4 py-3 rounded-xl text-sm">💻 เกี่ยวกับแพลตฟอร์ม</a>
+            </div>
+        </div>
+    </div>
+    <div id="about" class="max-w-6xl mx-auto px-6 py-28 border-t">
+        <p class="text-center text-gray-800 text-4xl mb-2">ฟีเจอร์ของแพลตฟอร์ม</p>
+        <p class="text-center text-xl text-gray-600 mb-20">สัมผัสประสบการณ์สภาพแวดล้อมการเรียนรู้ที่ครอบคลุม ซึ่งออกแบบมาสำหรับผู้เชี่ยวชาญด้านเครือข่าย</p>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+            <div>
+                <p class="text-4xl mb-6">👨🏼‍💻</p>
+                <p class="text-2xl text-gray-800 mb-4">จัดการแบบ Self-Service เต็มรูปแบบ</p>
+                <p class="text-md text-gray-600">ควบคุมการสร้าง, เริ่มทำงาน, หยุดทำงาน และลบอินสแตนซ์ GNS3 ของคุณได้อย่างสมบูรณ์</p>
+            </div>
+            <div>
+                <p class="text-4xl mb-6">🌍</p>
+                <p class="text-2xl text-gray-800 mb-4">เข้าถึงได้ทุกที่ ทุกเวลา</p>
+                <p class="text-md text-gray-600">เชื่อมต่อกับ GNS3 ของคุณได้อย่างราบรื่นจากทุกพื้นที่ เพียงแค่มีการเชื่อมต่ออินเทอร์เน็ต</p>
+            </div>
+            <div>
+                <p class="text-4xl mb-6">📸</p>
+                <p class="text-2xl text-gray-800 mb-4">Snapshot และสำรองข้อมูลทันที</p>
+                <p class="text-md text-gray-600">บันทึกและกู้คืนสถานะอินสแตนซ์ของคุณได้ ณ ช่วงเวลาใดก็ได้</p>
+            </div>
+            <div>
+                <p class="text-4xl mb-6">✨</p>
+                <p class="text-2xl text-gray-800 mb-4">ประหยัดทรัพยากรคอมพิวเตอร์</p>
+                <p class="text-md text-gray-600">ไม่ต้องกังวลเรื่องฮาร์ดแวร์ สร้างและทดสอบได้บนคลาวด์โดยตรง</p>
+            </div>
+        </div>
+    </div>
+    <div class="max-w-6xl mx-auto px-6 py-28 border-t">
+        <p class="text-center text-gray-800 text-4xl mb-10">พร้อมที่จะเริ่มทำแล็บหรือยัง?</p>
+        <div class="flex justify-center">
+                <a href="/signin" class="bg-gray-800 hover:bg-gray-700 transition-colors duration-200 ease-in-out text-white px-10 py-6 rounded-2xl text-xl">เริ่มต้นใช้งานเลย -></a>
+        </div>
+    </div>
+    {% include "component/footer.html" %}
+</body>
+</html>

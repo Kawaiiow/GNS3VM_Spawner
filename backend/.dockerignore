@@ -1,0 +1,62 @@
+# Git
+.git
+.gitignore
+
+# Python cache & bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+.venv/
+env3.*/
+
+# Secrets & AWS credentials (CRITICAL: Never bake credentials into Docker images)
+.env
+.env.*
+!.env.example
+*.pem
+*.ppk
+*.key
+
+# IDE & OS files
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+.cache
+
+# Testing & Coverage
+.pytest_cache/
+.coverage*
+coverage.xml
+htmlcov/
+
+# Documentation & Archives
+docs/
+docs_build/
+site_build/
+*.zip
+*.tar.gz
+*.log
+
