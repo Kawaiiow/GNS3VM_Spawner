@@ -60,8 +60,8 @@ FastAPI backend สำหรับระบบ **NetLab** ให้นักศ�
 erDiagram
     USERS {
         string user_id PK "UUID"
-        string username GSI "UsernameIndex"
-        string member_id GSI "MemberIdIndex"
+        string username UK "GSI: UsernameIndex"
+        string member_id UK "GSI: MemberIdIndex"
         string password_hash "Bcrypt hash"
         string full_name
         string role "student | instructor | admin"
@@ -73,8 +73,8 @@ erDiagram
 
     VM_INSTANCES {
         string instance_id PK "EC2 Instance ID (i-xxx)"
-        string user_id GSI "UserIdIndex"
-        string exercise_id "Nullable - references EXERCISES"
+        string user_id FK "GSI: UserIdIndex"
+        string exercise_id FK "Nullable - references EXERCISES"
         string name "Instance friendly name"
         string instance_type
         string ami_id
@@ -89,7 +89,7 @@ erDiagram
 
     EXERCISES {
         string exercise_id PK "UUID"
-        string instructor_id GSI "InstructorIdIndex"
+        string instructor_id FK "GSI: InstructorIdIndex"
         string ami_id "AMI ของ Snapshot"
         string title
         string description
