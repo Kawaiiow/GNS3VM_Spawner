@@ -45,4 +45,5 @@ terraform/*.tfstate*
 terraform/terraform.tfvars
 backend/.env
 .terraform.lock.hcl
+terraform.tfstate
 aws
