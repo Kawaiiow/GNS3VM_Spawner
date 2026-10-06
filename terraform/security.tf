@@ -24,7 +24,7 @@ resource "aws_security_group" "web" {
   dynamic "ingress" {
     for_each = var.expose_backend_port ? [1] : []
     content {
-      description = "Backend API (browser -> 8000)"
+      description = "Backend API (browser to 8000)"
       from_port   = 8000
       to_port     = 8000
       protocol    = "tcp"
