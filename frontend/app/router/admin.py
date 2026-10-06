@@ -6,21 +6,12 @@ template = Jinja2Templates(directory="template")
 
 @router.get("/dashboard")
 def render_admin_dashboard(request: Request):
-    return template.TemplateResponse(
-        request=request,
-        name="admin/dashboard.html"
-    )
+    return template.TemplateResponse(request=request, name="admin/dashboard.html")
 
 @router.get("/create")
 def render_admin_create(request: Request):
-    return template.TemplateResponse(
-        request=request,
-        name="admin/create.html"
-    )
+    return template.TemplateResponse(request=request, name="admin/create.html")
 
 @router.get("/update")
 def render_admin_edit(request: Request):
-    return template.TemplateResponse(
-        request=request,
-        name="admin/update.html"
-    )
+    return template.TemplateResponse(request=request, name="admin/update.html")
