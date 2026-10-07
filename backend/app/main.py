@@ -426,6 +426,19 @@ def admin_list_users(
         for u in users
     ]
 
+@app.get("/admin/users/{user_id}", response_model=UserResponse)
+def admin_get_user(
+    user_id: str,
+    current_user: UserInDB = Depends(get_current_admin_user),
+):
+    """
+    ดูข้อมูลบัญชีผู้ใช้รายบุคคล (เฉพาะ Admin)
+    """
+    target = get_user_by_id(user_id)
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ไม่พบผู้ใช้นี้")
+    
+    return _user_response(target)
 
 def _user_response(u: dict) -> UserResponse:
     return UserResponse(
