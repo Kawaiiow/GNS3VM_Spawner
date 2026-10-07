@@ -1,7 +1,11 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+ENV_FILE = BASE_DIR / ".env"
 
 
 class Settings(BaseSettings):
@@ -16,7 +20,11 @@ class Settings(BaseSettings):
     เพิ่มจากปกติ (ปกติ IAM user key ธรรมดาไม่ต้องมีตัวนี้)
     """
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(
+        env_file=(str(ENV_FILE), ".env"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     # AWS credentials & region
     aws_access_key_id: str
@@ -53,6 +61,25 @@ class Settings(BaseSettings):
     # จำกัดจำนวน instance ที่ระบบสร้างพร้อมกันได้ (กันค่าใช้จ่ายบานปลาย/โควตานักศึกษา)
     # Learner Lab มี budget จำกัดต่อ lab (มักไม่กี่สิบ USD) แนะนำตั้งค่าต่ำไว้ก่อน
     max_concurrent_instances: int = 3
+
+    # GNS3 server login ต่อ VM (GNS3 2.2 มี HTTP basic auth ได้ 1 user ต่อ server)
+    # ตอน launch ระบบจะสุ่มรหัสผ่านใหม่ให้ VM แต่ละเครื่อง ผ่าน EC2 UserData (first boot)
+    # แล้วเก็บไว้ใน DynamoDB และส่งให้เจ้าของ VM เท่านั้น
+    gns3_set_vm_password: bool = True
+    gns3_vm_user: str = "gns3"
+    gns3_config_path: str = "/home/ubuntu/.config/GNS3/2.2/gns3_server.conf"
+    gns3_service_name: str = "gns3-server"
+
+    # DynamoDB Tables & Endpoint
+    users_table_name: str = "netlab_users"
+    instances_table_name: str = "netlab_instances"
+    exercises_table_name: str = "netlab_exercises"
+    dynamodb_endpoint_url: Optional[str] = None
+
+    # JWT Authentication
+    jwt_secret_key: str = "netlab-super-secret-key-change-in-env-file"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 1440
 
 
 @lru_cache
