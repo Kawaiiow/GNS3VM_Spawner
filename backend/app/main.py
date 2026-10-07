@@ -128,6 +128,11 @@ def login(payload: LoginRequest, response: Response):
 
     return TokenResponse(access_token=token, token_type="bearer", user=user_resp)
 
+@app.post("/auth/logout")
+def logout(response: Response):
+    """ออกจากระบบ: ลบคุกกี้ access_token (เรียกซ้ำได้ ไม่ต้องล็อกอิน)"""
+    response.delete_cookie(key="access_token", httponly=True, samesite="lax")
+    return {"message": "Logged out successfully."}
 
 @app.get("/auth/me", response_model=UserResponse)
 def get_my_profile(current_user: UserInDB = Depends(get_current_user)):

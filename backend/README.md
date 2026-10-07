@@ -22,7 +22,7 @@ FastAPI backend สำหรับระบบ **NetLab** ให้นักศ�
 
 1. **Authentication & User Management (DynamoDB)**
    - ลงชื่อเข้าใช้ด้วย Username หรือ Member ID พร้อมรหัสผ่านที่เข้ารหัสด้วย `bcrypt`
-   - ออก **JWT (HS256)** รองรับทั้ง `Authorization: Bearer <token>` และ `HttpOnly Cookie`
+   - ออก **JWT (HS256)** รองรับทั้ง `Authorization: Bearer <token>` และ `HttpOnly Cookie` (ออกจากระบบด้วย `POST /auth/logout`)
    - แบ่งสิทธิ์: `student`, `instructor`, `admin`
    - Admin จัดการผู้ใช้ผ่าน API ได้ครบ (สร้าง / ดูรายชื่อ / แก้ไข / ลบ) และมี Dashboard ภาพรวม
    - มีสคริปต์ CLI สำหรับสร้างบัญชี (`scripts/create_user.py`)
@@ -60,8 +60,8 @@ FastAPI backend สำหรับระบบ **NetLab** ให้นักศ�
 erDiagram
     USERS {
         string user_id PK "UUID"
-        string username GSI "UsernameIndex"
-        string member_id GSI "MemberIdIndex"
+        string username UK "GSI: UsernameIndex"
+        string member_id UK "GSI: MemberIdIndex"
         string password_hash "Bcrypt hash"
         string full_name
         string role "student | instructor | admin"
@@ -73,8 +73,8 @@ erDiagram
 
     VM_INSTANCES {
         string instance_id PK "EC2 Instance ID (i-xxx)"
-        string user_id GSI "UserIdIndex"
-        string exercise_id "Nullable - references EXERCISES"
+        string user_id FK "GSI: UserIdIndex"
+        string exercise_id FK "Nullable - references EXERCISES"
         string name "Instance friendly name"
         string instance_type
         string ami_id
@@ -89,7 +89,7 @@ erDiagram
 
     EXERCISES {
         string exercise_id PK "UUID"
-        string instructor_id GSI "InstructorIdIndex"
+        string instructor_id FK "GSI: InstructorIdIndex"
         string ami_id "AMI ของ Snapshot"
         string title
         string description
@@ -318,7 +318,7 @@ aws ec2 describe-instances --filters "Name=tag:Name,Values=netlab-gns3-ami-build
 | กลุ่ม | Endpoint | สิทธิ์ |
 |---|---|---|
 | System | `GET /`, `GET /health` | Public |
-| Auth | `POST /auth/login`, `GET /auth/me` | Public / User |
+| Auth | `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` | Public / Public / User |
 | Exercises | `GET /exercises`, `GET /exercises/{id}` | Public |
 | | `POST /exercises` | Instructor |
 | | `DELETE /exercises/{id}` | เจ้าของ (Instructor) / Admin |
@@ -341,6 +341,12 @@ curl http://localhost:8000/auth/me -b cookies.txt
 # หรือ
 curl http://localhost:8000/auth/me -H "Authorization: Bearer <TOKEN_HERE>"
 ```
+
+### 2.1 ออกจากระบบ
+```bash
+curl -X POST http://localhost:8000/auth/logout -b cookies.txt -c cookies.txt
+```
+ระบบลบคุกกี้ `access_token` ให้ (ถ้าใช้ Bearer Token ให้ลบ Token ทิ้งฝั่ง Client เอง เพราะ Token ยังใช้ได้จนหมดอายุ)
 
 ### 3. ดูรายการแบบฝึกหัด Lab
 ```bash
