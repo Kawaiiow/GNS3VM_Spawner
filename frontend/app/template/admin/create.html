@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    {% include "component/head.html" %}
+    <title>เพิ่มบัญชี - NetLab</title>
+</head>
+<body class="bg-white">
+    {% include "component/navbar.html" %}
+    <div class="max-w-md mx-auto min-h-screen px-6 py-28">
+        <div class="text-center">
+            <img src="../static/image/netlab_icon.png" class="inline-block max-h-24 w-auto mb-6">
+            <p class="text-2xl text-gray-800">เพิ่มบัญชี</p>
+            <p class="text-md text-gray-600 mb-6">เพิ่มบัญชีใน NetLab</p>
+        </div>
+        <form action="/admin/create" method="POST">
+            <div class="mb-4">
+                <label class="block text-sm text-gray-800 mb-2">ชื่อผู้ใช้</label>
+                <input type="text" name="identifier" placeholder="กรอกชื่อผู้ใช้" required class="w-full bg-white border rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-600"/>
+            </div>
+            <div class="mb-4">
+                <label class="block text-sm text-gray-800 mb-2">รหัสผ่าน</label>
+                <div class="relative">
+                    <input type="password" id="password" name="password" placeholder="กรอกรหัสผ่าน" required class="w-full bg-white border rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-600"/>
+                    <button type="button" onclick="togglePassword()" class="absolute inset-y-0 right-0 pr-3 flex items-center"><img id="eye-icon" src="../static/image/eye_open.svg" class="max-h-full w-auto"></button>
+                </div>
+            </div>
+            <div class="mb-6">
+                <label class="block text-sm text-gray-800 mb-2">บทบาท</label>
+                <select name="role" required class="w-full bg-white border rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-600 appearance-none">
+                    <option value="student">student</option>
+                    <option value="instructor">instructor</option>
+                </select>
+            </div>
+            <button type="submit" class="w-full bg-green-600 hover:bg-green-700 transition-colors duration-200 ease-in-out text-white text-sm px-4 py-3 rounded-xl">เพิ่ม</button>
+        </form>
+    </div>
+    {% include "component/footer.html" %}
+</body>
+</html>
