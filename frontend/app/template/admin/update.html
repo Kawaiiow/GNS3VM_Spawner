@@ -12,23 +12,36 @@
             <p class="text-2xl text-gray-800">แก้ไขบัญชี</p>
             <p class="text-md text-gray-600 mb-6">แก้ไขบัญชีใน NetLab</p>
         </div>
-        <form action="/admin/update" method="POST">
+        <form action="/admin/update/{{ user.user_id }}" method="POST">
+            <div class="mb-4">
+                <label class="block text-sm text-gray-800 mb-2">ชื่อจริง</label>
+                <input type="text" name="name" value="{{ name }}" placeholder="กรอกชื่อจริง" required class="w-full bg-white border rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-600"/>
+            </div>
+            <div class="mb-4">
+                <label class="block text-sm text-gray-800 mb-2">นามสกุล</label>
+                <input type="text" name="surname" value="{{ surname }}" placeholder="กรอกนามสกุล" required class="w-full bg-white border rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-600"/>
+            </div>
             <div class="mb-4">
                 <label class="block text-sm text-gray-800 mb-2">ชื่อผู้ใช้</label>
-                <input type="text" name="identifier" placeholder="กรอกชื่อผู้ใช้" required class="w-full bg-white border rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-600"/>
+                <input type="text" name="username" value="{{ user.username }}" placeholder="กรอกชื่อผู้ใช้" required class="w-full bg-white border rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-600"/>
+            </div>
+            <div class="mb-4">
+                <label class="block text-sm text-gray-800 mb-2">รหัสประจำตัวผู้ใช้</label>
+                <input type="text" name="member_id" value="{{ user.member_id }}" placeholder="กรอกรหัสประจำตัวผู้ใช้" required class="w-full bg-white border rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-600"/>
             </div>
             <div class="mb-4">
                 <label class="block text-sm text-gray-800 mb-2">รหัสผ่าน</label>
                 <div class="relative">
-                    <input type="password" id="password" name="password" placeholder="กรอกรหัสผ่าน" required class="w-full bg-white border rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-600"/>
-                    <button type="button" onclick="togglePassword()" class="absolute inset-y-0 right-0 pr-3 flex items-center"><img id="eye-icon" src="../static/image/eye_open.svg" class="max-h-full w-auto"></button>
+                    <input type="password" id="password" name="password" placeholder="เว้นว่างไว้หากไม่เปลี่ยนรหัสผ่าน" class="w-full bg-white border rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-600"/>
+                    <button type="button" onclick="togglePassword()" class="absolute inset-y-0 right-0 pr-3 flex items-center"><img id="eye-icon" src="/static/image/eye_open.svg" class="max-h-full w-auto"></button>
                 </div>
             </div>
             <div class="mb-6">
                 <label class="block text-sm text-gray-800 mb-2">บทบาท</label>
                 <select name="role" required class="w-full bg-white border rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-600 appearance-none">
-                    <option value="student">student</option>
-                    <option value="instructor">instructor</option>
+                    <option value="student" {{ "selected" if user.role == "student" }}>student</option>
+                    <option value="instructor" {{ "selected" if user.role == "instructor" }}>instructor</option>
+                    <option value="admin" {{ "selected" if user.role == "admin" }}>admin</option>
                 </select>
             </div>
             <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 transition-colors duration-200 ease-in-out text-white text-sm px-4 py-3 rounded-xl">แก้ไข</button>

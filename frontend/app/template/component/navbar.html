@@ -1,6 +1,16 @@
 <div class="bg-white border-b fixed top-0 w-full">
     <div class="flex justify-between max-w-7xl mx-auto px-6 py-3">
-        <a href="/" class="flex items-center"><img src="../../static/image/netlab_logo.png" class="inline-block h-10 w-auto"></a>
+        <a class="flex items-center"><img src="/static/image/netlab_logo.png" class="inline-block h-10 w-auto"></a>
+        {% if request.cookies.get("access_token") %}
+        <input type="checkbox" id="profile" class="hidden peer">
+        <label for="profile" class="flex items-center justify-center w-10 h-10 rounded-full bg-gray-800 text-white text-xs cursor-pointer">{{ request.cookies.get("username", "?")[0] }}</label>
+        <div class="absolute right-4 top-20 w-48 bg-white border rounded-xl shadow-md p-2 hidden peer-checked:block">
+            <form action="/signout" method="POST">
+                <button type="submit" class="block px-4 py-2 text-red-600 text-sm">ลงชื่อออก</button>
+            </form>
+        </div>
+        {% else %}
         <a href="/signin" class="px-4 py-3 bg-gray-800 hover:bg-gray-700 transition-colors duration-200 ease-in-out text-white text-xs rounded-xl">ลงชื่อเข้าใช้</a>
+        {% endif %}
     </div>
 </div>
