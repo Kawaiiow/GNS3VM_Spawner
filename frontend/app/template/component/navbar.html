@@ -5,9 +5,11 @@
         <div class="relative">
             <input type="checkbox" id="profile" class="sr-only peer">
             <label for="profile" class="flex items-center justify-center w-10 h-10 rounded-full bg-gray-800 hover:bg-gray-700 transition-colors duration-200 ease-in-out text-white text-xs cursor-pointer">{{ request.cookies.get("username", "?")[0].upper() }}</label>
-            <div class="absolute right-0 top-full mt-2 w-48 bg-white border rounded-xl shadow-sm p-2 hidden peer-checked:block">
+            <div class="absolute right-0 top-full mt-6 w-48 bg-white border rounded-lg shadow-sm p-2 hidden peer-checked:block">
+                <a href="/profile" class="block w-full px-4 py-2 text-gray-800 hover:text-gray-700 transition-colors duration-200 ease-in-out text-sm">โปรไฟล์</a>
+                <hr class="my-2">
                 <form action="/signout" method="POST">
-                    <button type="submit" class="block px-4 py-2 text-red-600 text-sm">ลงชื่อออก</button>
+                    <button type="submit" class="block w-full px-4 py-2 text-red-600 hover:text-red-700 transition-colors duration-200 ease-in-out text-left text-sm">ลงชื่อออก</button>
                 </form>
             </div>
         </div>

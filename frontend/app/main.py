@@ -45,6 +45,18 @@ def handle_signin(request: Request, identifier: str = Form(...), password: str =
     redirect.set_cookie(key="role", value=data["user"]["role"], httponly=True, max_age=1440 * 60, samesite="lax")
     return redirect
 
+@app.get("/profile")
+def render_profile(request: Request):
+    if not request.cookies.get("access_token"):
+        return template.TemplateResponse(request=request, name="404.html", status_code=status.HTTP_404_NOT_FOUND)
+    try:
+        response = httpx.get(f"{BACKEND_URL}/auth/me", cookies={"access_token": request.cookies.get("access_token")}, timeout=10.0)
+    except:
+        return template.TemplateResponse(request=request, name="503.html", status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+    return template.TemplateResponse(request=request, name="profile.html", context={"user": response.json()})
+
+app.include_router(admin.router, prefix="/admin")
+
 @app.post("/signout")
 def handle_signout(request: Request):
     if not request.cookies.get("access_token"):
@@ -58,8 +70,6 @@ def handle_signout(request: Request):
     redirect.delete_cookie("username")
     redirect.delete_cookie("role")
     return redirect
-
-app.include_router(admin.router, prefix="/admin")
 
 @app.api_route("/{path:path}", methods=["GET", "POST"])
 def catch_all(request: Request):

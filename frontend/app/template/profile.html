@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    {% include "component/head.html" %}
+    <title>โปรไฟล์ - NetLab</title>
+</head>
+<body class="bg-white">
+    {% include "component/navbar.html" %}
+    <div class="max-w-md mx-auto min-h-screen px-6 py-28">
+        <div class="flex flex-col items-center text-center mb-8">
+            <div class="flex items-center justify-center w-24 h-24 rounded-full bg-gray-800 text-white text-4xl mb-4">{{ user.full_name[0].upper() }}</div>
+            <p class="text-2xl text-gray-800">{{ user.full_name }}</p>
+            <p class="text-base text-gray-600 mb-2">@{{ user.username }}</p>
+            <span class="inline-flex items-center rounded-full bg-gray-800 px-3 py-1 text-sm text-white">{{ user.role }}</span>
+        </div>
+        <div class="grid grid-cols-2 gap-6 mb-8">
+            <div class="rounded-lg border shadow-sm px-3 py-6 text-center">
+                <p class="text-4xl text-gray-800">{{ 0 if user.active_instance_id is none else 1 }}</p>
+                <p class="text-sm text-gray-600">Sandbox ที่ทำอยู่</p>
+            </div>
+            <div class="rounded-lg border shadow-sm px-3 py-6 text-center">
+                <p class="text-4xl text-gray-800">{{ 0 if user.active_exercise_instance_id is none else 1 }}</p>
+                <p class="text-sm text-gray-600">แบบฝึกหัดที่ทำอยู่</p>
+            </div>
+        </div>
+        <div class="divide-y border-y">
+            <div class="flex items-center justify-between py-4">
+                <p class="text-sm text-gray-600">ชื่อผู้ใช้</p>
+                <p class="text-gray-800">{{ user.username }}</p>
+            </div>
+            <div class="flex items-center justify-between py-4">
+                <p class="text-sm text-gray-600">รหัสประจำตัวผู้ใช้</p>
+                <p class="text-gray-800">{{ user.member_id }}</p>
+            </div>
+            <div class="flex items-center justify-between py-4">
+                <p class="text-sm text-gray-600">ชื่อจริง-นามสกุล</p>
+                <p class="text-gray-800">{{ user.full_name }}</p>
+            </div>
+            <div class="flex items-center justify-between py-4">
+                <p class="text-sm text-gray-600">บทบาท</p>
+                <p class="text-gray-800">{{ user.role }}</p>
+            </div>
+            <div class="flex items-center justify-between py-4">
+                <p class="text-sm text-gray-600">เข้าใช้งานตั้งแต่</p>
+                <p class="text-gray-800">{{ user.created_at[:10] }}</p>
+            </div>
+            <div class="flex items-center justify-between py-4">
+                <p class="text-sm text-gray-600">เข้าใช้งานล่าสุด</p>
+                <p class="text-gray-800">{{ user.updated_at[:10] }}</p>
+            </div>
+        </div>
+    </div>
+    {% include "component/footer.html" %}
+</body>
+</html>
