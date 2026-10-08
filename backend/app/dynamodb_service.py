@@ -14,12 +14,17 @@ import boto3
 from boto3.dynamodb.conditions import Key, Attr
 from botocore.exceptions import ClientError
 from fastapi import HTTPException, status
+from functools import lru_cache
 
 from app.config import get_settings
 
+# 1. Cache the settings so it only reads the environment once
+@lru_cache()
+def get_cached_settings():
+    return get_settings()
 
 def _get_boto3_kwargs() -> dict[str, Any]:
-    settings = get_settings()
+    settings = get_cached_settings()
     kwargs: dict[str, Any] = {
         "region_name": settings.aws_region,
         "aws_access_key_id": settings.aws_access_key_id,
@@ -31,29 +36,38 @@ def _get_boto3_kwargs() -> dict[str, Any]:
         kwargs["endpoint_url"] = settings.dynamodb_endpoint_url
     return kwargs
 
+# 2. Global variables to maintain the HTTP Keep-Alive connection pool
+_dynamodb_resource = None
+_dynamodb_client = None
+_tables = {}
 
 def get_dynamodb_resource():
-    return boto3.resource("dynamodb", **_get_boto3_kwargs())
-
+    global _dynamodb_resource
+    if _dynamodb_resource is None:
+        _dynamodb_resource = boto3.resource("dynamodb", **_get_boto3_kwargs())
+    return _dynamodb_resource
 
 def get_dynamodb_client():
-    return boto3.client("dynamodb", **_get_boto3_kwargs())
+    global _dynamodb_client
+    if _dynamodb_client is None:
+        _dynamodb_client = boto3.client("dynamodb", **_get_boto3_kwargs())
+    return _dynamodb_client
 
-
+# 3. Cache the Table objects to avoid recreating them
 def get_users_table():
-    settings = get_settings()
-    return get_dynamodb_resource().Table(settings.users_table_name)
-
+    if "users" not in _tables:
+        _tables["users"] = get_dynamodb_resource().Table(get_cached_settings().users_table_name)
+    return _tables["users"]
 
 def get_instances_table():
-    settings = get_settings()
-    return get_dynamodb_resource().Table(settings.instances_table_name)
-
+    if "instances" not in _tables:
+        _tables["instances"] = get_dynamodb_resource().Table(get_cached_settings().instances_table_name)
+    return _tables["instances"]
 
 def get_exercises_table():
-    settings = get_settings()
-    return get_dynamodb_resource().Table(settings.exercises_table_name)
-
+    if "exercises" not in _tables:
+        _tables["exercises"] = get_dynamodb_resource().Table(get_cached_settings().exercises_table_name)
+    return _tables["exercises"]
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()

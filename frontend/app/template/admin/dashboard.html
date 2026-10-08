@@ -19,28 +19,48 @@
                 <tr class="text-xs text-gray-600 tracking-wide">
                     <th class="px-4 py-3 text-left">รหัสผู้ใช้</th>
                     <th class="px-4 py-3 text-center">บทบาท</th>
-                    <th class="px-4 py-3 text-center">สถานะแล็บ</th>
-                    <th class="px-4 py-3 text-center whitespace-nowrap">ที่อยู่ IP แล็บ</th>
+                    <th class="px-4 py-3 text-center">สถานะ Sandbox</th>
+                    <th class="px-4 py-3 text-center whitespace-nowrap">ที่อยู่ IP Sandbox</th>
                     <th class="px-4 py-3 text-center">สถานะแบบฝึกหัด</th>
                     <th class="px-4 py-3 text-center whitespace-nowrap">ที่อยู่ IP แบบฝึกหัด</th>
                     <th class="px-4 py-3 text-right">การจัดการ</th>
                 </tr>
+                {% for user in users %}
+                {% set sb = user.instances | selectattr("kind", "equalto", "sandbox") | first %}
+                {% set ex = user.instances | selectattr("kind", "equalto", "exercise") | first %}
                 <tr class="border-t">
-                    <td class="px-4 py-3 text-left text-gray-800">it67070114</td>
-                    <td class="px-4 py-3 text-center text-gray-800">Student</td>
-                    <td class="px-4 py-3 text-center"><span class="whitespace-nowrap text-xs px-3 py-1.5 rounded-full bg-green-600 text-white">ใช้งานอยู่</span></td>
-                    <td class="px-4 py-3 text-center text-gray-800">10.30.6.67</td>
-                    <td class="px-4 py-3 text-center"><span class="whitespace-nowrap text-xs px-3 py-1.5 rounded-full bg-orange-600 text-white">ไม่ได้ใช้งาน</span></td>
-                    <td class="px-4 py-3 text-center text-gray-800">-</td>
+                    <td class="px-4 py-3 text-left text-gray-800">{{ user.member_id }}</td>
+                    <td class="px-4 py-3 text-center text-gray-800">{{ user.role }}</td>
+                    <td class="px-4 py-3 text-center">
+                        {% if sb and sb.state == "running" %}
+                        <span class="whitespace-nowrap text-xs px-3 py-1.5 rounded-full bg-green-600 text-white">ใช้งานอยู่</span>
+                        {% elif sb and sb.state == "stopped" %}
+                        <span class="whitespace-nowrap text-xs px-3 py-1.5 rounded-full bg-yellow-600 text-white">หยุดใช้งาน</span>
+                        {% else %}
+                        <span class="whitespace-nowrap text-xs px-3 py-1.5 rounded-full bg-orange-600 text-white">ไม่ได้ใช้งาน</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3 text-center text-gray-800">{{ sb.public_ip if sb and sb.public_ip else "-" }}</td>
+                    <td class="px-4 py-3 text-center">
+                        {% if ex and ex.state == "running" %}
+                        <span class="whitespace-nowrap text-xs px-3 py-1.5 rounded-full bg-green-600 text-white">ใช้งานอยู่</span>
+                        {% elif ex and ex.state == "stopped" %}
+                        <span class="whitespace-nowrap text-xs px-3 py-1.5 rounded-full bg-yellow-600 text-white">หยุดใช้งาน</span>
+                        {% else %}
+                        <span class="whitespace-nowrap text-xs px-3 py-1.5 rounded-full bg-orange-600 text-white">ไม่ได้ใช้งาน</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3 text-center text-gray-800">{{ ex.public_ip if ex and ex.public_ip else "-" }}</td>
                     <td class="px-4 py-3 text-right">
                         <div class="flex justify-end gap-2">
-                            <a href="/admin/update" class="text-xs px-3 py-2 bg-gray-800 hover:bg-gray-700 transition-colors duration-200 ease-in-out rounded-xl text-white">แก้ไข</a>
-                            <form action="/admin/delete" method="POST" class="inline">
+                            <a href="/admin/update/{{ user.user_id }}" class="text-xs px-3 py-2 bg-gray-800 hover:bg-gray-700 transition-colors duration-200 ease-in-out rounded-xl text-white">แก้ไข</a>
+                            <form action="/admin/delete/{{ user.user_id }}" method="POST" class="inline">
                                 <button type="submit" class="text-xs px-3 py-2 bg-red-600 hover:bg-red-700 transition-colors duration-200 ease-in-out rounded-xl text-white">ลบ</button>
                             </form>
                         </div>
                     </td>
                 </tr>
+                {% endfor %}
             </table>
         </div>
     </div>
