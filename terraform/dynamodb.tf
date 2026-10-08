@@ -1,5 +1,41 @@
 # schema ตรงกับ scripts/init_dynamodb.py
-# (ถ้าใช้ Terraform สร้างตารางแล้ว ไม่ต้องรัน init_dynamodb.py อีก ไม่งั้นชื่อซ้ำ)
+#
+# ทำงานอัตโนมัติด้วย `terraform apply` ปกติ:
+#   - data.external เช็คตอน plan ว่าตารางมีอยู่ใน AWS หรือไม่ (ddb_exists.py)
+#   - มีอยู่ -> import block ทำงาน รับตารางเดิมเข้า state
+#   - ไม่มี  -> import block ถูกข้าม แล้ว Terraform สร้างตารางใหม่ให้
+# ต้องใช้ Terraform >= 1.7 (import + for_each) และ python + boto3 ในเครื่อง
+# (python_cmd ใช้ค่าเดียวกับใน s3.tf)
+
+data "external" "ddb_exists" {
+  program = [local.python_cmd, "${path.module}/ddb_exists.py"]
+  query = {
+    region = var.region
+    tables = join(",", [var.users_table, var.instances_table, var.exercises_table])
+  }
+}
+
+locals {
+  ddb_exists = data.external.ddb_exists.result # { "<ชื่อตาราง>" = "true"/"false" }
+}
+
+import {
+  for_each = lookup(local.ddb_exists, var.users_table, "false") == "true" ? toset(["import"]) : toset([])
+  to       = aws_dynamodb_table.users
+  id       = var.users_table
+}
+
+import {
+  for_each = lookup(local.ddb_exists, var.instances_table, "false") == "true" ? toset(["import"]) : toset([])
+  to       = aws_dynamodb_table.instances
+  id       = var.instances_table
+}
+
+import {
+  for_each = lookup(local.ddb_exists, var.exercises_table, "false") == "true" ? toset(["import"]) : toset([])
+  to       = aws_dynamodb_table.exercises
+  id       = var.exercises_table
+}
 
 resource "aws_dynamodb_table" "users" {
   name         = var.users_table

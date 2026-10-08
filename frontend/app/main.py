@@ -4,8 +4,9 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import RedirectResponse
 from router import admin
 import uvicorn, httpx
+import os
 
-BACKEND_URL = "http://localhost:8000"
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")

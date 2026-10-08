@@ -8,7 +8,9 @@ services:
     restart: unless-stopped
 
   frontend:
-    build: ./frontend             # หน้าเว็บ server-rendered ล้วน ไม่ได้เรียก backend จากฝั่ง Python
+    build: ./frontend             # server-rendered; Python ฝั่ง frontend เรียก backend ผ่าน BACKEND_URL
+    environment:
+      - BACKEND_URL=http://backend:8000   # ใน container ใช้ชื่อ service ไม่ใช่ localhost
     ports:
       - "8080:8080"
     depends_on:
