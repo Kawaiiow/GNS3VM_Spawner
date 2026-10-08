@@ -28,6 +28,7 @@ from app.dynamodb_service import (
     get_user_by_member_id,
     get_user_by_username,
     list_all_exercises,
+    list_all_instances,
     list_all_users,
     list_instances_by_user,
     update_exercise_status,
@@ -402,6 +403,45 @@ def delete_instance(
     """
     _verify_instance_ownership(instance_id, current_user)
     return ec2_service.terminate_instance(instance_id)
+
+
+@app.post("/admin/instances/terminate-all")
+def admin_terminate_all_instances(
+    wait: bool = Query(True, description="รอจน EC2 เป็น terminated ก่อนตอบกลับ"),
+    current_user: UserInDB = Depends(get_current_admin_user),
+):
+    """
+    ลบ (terminate) VM ทั้งหมดที่ระบบสร้างไว้ (เฉพาะ Admin)
+    ใช้ก่อน terraform destroy เพื่อให้ลบ Security Group ของ VM ได้โดยไม่ติด DependencyViolation
+    - ปล่อยโควตาของเจ้าของทุก VM
+    - wait=true: รอจน EC2 รายงาน terminated (สูงสุดประมาณ 5 นาที)
+    """
+    terminated: list[str] = []
+    failed: list[dict] = []
+    for rec in list_all_instances():
+        iid = rec["instance_id"]
+        try:
+            ec2_service.terminate_instance(iid)
+            terminated.append(iid)
+        except HTTPException as e:
+            failed.append({"instance_id": iid, "error": str(e.detail)})
+
+    wait_error: Optional[str] = None
+    if wait and terminated:
+        try:
+            ec2_service.get_ec2_client().get_waiter("instance_terminated").wait(
+                InstanceIds=terminated,
+                WaiterConfig={"Delay": 5, "MaxAttempts": 60},
+            )
+        except Exception as e:  # noqa: BLE001
+            wait_error = str(e)[:300]
+
+    return {
+        "terminated_count": len(terminated),
+        "terminated": terminated,
+        "failed": failed,
+        "wait_error": wait_error,
+    }
 
 
 # ==========================================

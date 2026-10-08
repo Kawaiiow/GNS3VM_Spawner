@@ -2,6 +2,7 @@ admin_cidr  = "x.x.x.x/32" #ไม่ค่อยจำเป็น Connect เ�
 repo_url    = "https://github.com/<owner>/GNS3VM_Spawner.git"   # ห้ามใส่ token ในบรรทัดนี้
 repo_branch = "main"
 # expose_backend_port = true   # เปิด 8000 ถ้า JS ในหน้าเว็บเรียก backend ตรงๆ จากเบราว์เซอร์
+admin_password = "....."
 
 # base_ami_id = "ami-xxxxxxxxxxxxxxxxx"   # ว่างไว้ = ใช้ netlab-gns3-base* ล่าสุดในบัญชี
 # key_name    = "vockey"
