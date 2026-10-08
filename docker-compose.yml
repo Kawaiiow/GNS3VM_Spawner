@@ -1,0 +1,19 @@
+services:
+  backend:
+    build: ./backend
+    env_file: ./backend/.env      # สร้างโดย user_data (ไม่อยู่ใน image เพราะ .dockerignore กัน .env ไว้)
+    ports:
+      - "8000:8000"               # เปิดที่ตัวเครื่อง แต่จะเข้าจากภายนอกได้ก็ต่อเมื่อ Security Group เปิด 8000
+                                  # (terraform: expose_backend_port = true)
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend             # server-rendered; Python ฝั่ง frontend เรียก backend ผ่าน BACKEND_URL
+    environment:
+      - BACKEND_URL=http://backend:8000   # ใน container ใช้ชื่อ service ไม่ใช่ localhost
+    ports:
+      - "8080:8080"
+    depends_on:
+      backend:
+        condition: service_healthy   # ใช้ HEALTHCHECK /health ใน backend/Dockerfile
+    restart: unless-stopped

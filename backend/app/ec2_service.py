@@ -12,6 +12,7 @@ ec2_service.py
 
 import secrets
 import string
+from urllib.parse import quote
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -19,6 +20,7 @@ import boto3
 from botocore.exceptions import ClientError, WaiterError
 from fastapi import HTTPException
 
+from app import s3_service
 from app.config import get_settings
 from app.dynamodb_service import (
     EXERCISE_SLOT,
@@ -113,6 +115,39 @@ def _build_gns3_user_data(user: str, password: str) -> str:
         .replace("__SERVICE__", settings.gns3_service_name)
     )
 
+# ต่อท้าย UserData ของ VM แบบฝึกหัด: ดาวน์โหลดไฟล์ .gns3project จาก S3 (presigned URL)
+# แล้ว import เข้า GNS3 ผ่าน REST API ของเครื่องตัวเอง (first boot เท่านั้น)
+# log อยู่ที่ /var/log/netlab-import.log
+_GNS3_IMPORT_USER_DATA_TEMPLATE = r"""
+# NetLab: import exercise project from S3
+exec >>/var/log/netlab-import.log 2>&1
+AUTH="__USER__:__PASSWORD__"
+API="http://127.0.0.1:__PORT__/v2"
+for i in $(seq 1 150); do
+  code=$(curl -s -o /dev/null -w "%{http_code}" -u "$AUTH" "$API/version")
+  [ "$code" = "200" ] && break
+  sleep 2
+done
+curl -fsSL -o /tmp/exercise.gns3project "__URL__" || { echo "download failed"; exit 1; }
+PID=$(cat /proc/sys/kernel/random/uuid)
+curl -fsS -u "$AUTH" -X POST -H "Content-Type: application/octet-stream" \
+  --data-binary @/tmp/exercise.gns3project \
+  "$API/projects/$PID/import?name=__NAME__" && echo "import ok"
+rm -f /tmp/exercise.gns3project
+"""
+
+def _build_import_user_data(user: str, password: str, s3_key: str, title: Optional[str]) -> str:
+    settings = get_settings()
+    url = s3_service.presign_get(s3_key)
+    name = "".join(c for c in (title or "") if c.isalnum() or c in ("-", "_")).strip()
+    name = quote(name[:40] or "exercise", safe="")
+    return (
+        _GNS3_IMPORT_USER_DATA_TEMPLATE.replace("__USER__", user)
+        .replace("__PASSWORD__", password)
+        .replace("__PORT__", str(settings.gns3_api_port))
+        .replace("__URL__", url)
+        .replace("__NAME__", name)
+    )
 
 def _count_active_project_instances(client) -> int:
     """นับ instance ของโปรเจคที่ยังไม่ terminated/terminating เพื่อกัน quota บาน"""
@@ -147,6 +182,9 @@ def launch_instance(
 
     # ตรวจสอบ exercise_id (ถ้ามีส่งมา)
     resolved_ami = ami_id
+    exercise_s3_key: Optional[str] = None
+    exercise_title: Optional[str] = None
+
     if exercise_id:
         exercise = get_exercise_record(exercise_id)
         if not exercise or not exercise.get("is_active"):
@@ -160,7 +198,7 @@ def launch_instance(
             real_status = (
                 get_image_status(exercise["ami_id"])
                 if exercise.get("ami_id")
-                else "unknown"
+                else ex_status  # แบบ S3: ใช้สถานะที่ background export อัปเดตไว้ (pending/failed)
             )
             if real_status in ("available", "failed"):
                 update_exercise_status(exercise_id, real_status)
@@ -174,6 +212,14 @@ def launch_instance(
                 )
         if not resolved_ami:
             resolved_ami = exercise.get("ami_id")
+        # แบบฝึกหัดที่ export ไว้ที่ S3: launch จาก base AMI แล้ว import โปรเจ็คตอน first boot
+        exercise_s3_key = exercise.get("s3_key")
+        exercise_title = exercise.get("title")
+        if exercise_s3_key and not settings.gns3_set_vm_password:
+            raise HTTPException(
+                status_code=500,
+                detail="ต้องเปิด GNS3_SET_VM_PASSWORD=true เพื่อ import แบบฝึกหัดจาก S3",
+            )
 
     # 1. Atomic reservation in DynamoDB (เฉพาะ student) แยกช่อง Sandbox / Exercise
     slot = EXERCISE_SLOT if exercise_id else SANDBOX_SLOT
@@ -225,7 +271,18 @@ def launch_instance(
     if settings.gns3_set_vm_password:
         gns3_user = settings.gns3_vm_user
         gns3_password = _generate_vm_password()
-        run_instances_kwargs["UserData"] = _build_gns3_user_data(gns3_user, gns3_password)
+        user_data = _build_gns3_user_data(gns3_user, gns3_password)
+        if exercise_s3_key:
+            try:
+                user_data += _build_import_user_data(
+                    gns3_user, gns3_password, exercise_s3_key, exercise_title
+                )
+            except Exception as e:
+                _rollback()
+                raise HTTPException(
+                    status_code=500, detail=f"สร้าง presigned URL ของแบบฝึกหัดไม่สำเร็จ: {e}"
+                ) from e
+        run_instances_kwargs["UserData"] = user_data
 
     now_iso = datetime.now(timezone.utc).isoformat()
 

@@ -36,3 +36,14 @@ build/
 
 # ===== Logs =====
 *.log
+
+
+# ==== Terraform ====
+terraform.tfvars
+terraform/.terraform/
+terraform/*.tfstate*
+terraform/terraform.tfvars
+backend/.env
+.terraform.lock.hcl
+terraform.tfstate
+aws

@@ -3,7 +3,9 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import RedirectResponse
 import httpx
 
-BACKEND_URL = "http://localhost:8000"
+import os
+
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
 router = APIRouter()
 template = Jinja2Templates(directory="template")
