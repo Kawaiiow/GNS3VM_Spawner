@@ -60,7 +60,7 @@ credentials ของ Learner Lab (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
 แต่ Terraform **ไม่อ่านไฟล์ `.env` เอง** ต้องโหลดค่าเหล่านี้เข้า environment ของ terminal ก่อน รันจากโฟลเดอร์ `terraform`:
 
 Windows PowerShell:
-
+> ต้องอยู่ที่ \GNS3VM_Spawner
 ```powershell
 Get-Content .\backend\.env |
   Where-Object { $_ -match '^(AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|AWS_REGION)=' } |
@@ -94,8 +94,11 @@ cp terraform.tfvars.example terraform.tfvars   # Windows: copy terraform.tfvars.
 แก้ `terraform.tfvars` อย่างน้อย 2 ค่า:
 
 ```hcl
-admin_cidr = "1.2.3.4/32"                                  # IP ของคุณ
+admin_cidr = "1.2.3.4/32"                                  # ไม่ต้องใส่ SSH ในเว็บได้
 repo_url   = "https://github.com/<owner>/GNS3VM_Spawner.git"   # ห้ามใส่ token ในบรรทัดนี้
+repo_branch = "branch"
+# expose_backend_port = true   # เปิด 8000 ถ้า JS ในหน้าเว็บเรียก backend ตรงๆ จากเบราว์เซอร์
+PowerShell: $env:TF_VAR_github_token="..."   |   bash: export TF_VAR_github_token=...
 ```
 
 ถ้า repo เป็น **private** ให้ตั้ง `TF_VAR_github_token` ก่อน apply (ดูหัวข้อ [Repo แบบ private](#repo-แบบ-private-github-token))

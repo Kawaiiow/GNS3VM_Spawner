@@ -32,6 +32,11 @@ resource "aws_instance" "web" {
     instances_table   = aws_dynamodb_table.instances.name
     exercises_table   = aws_dynamodb_table.exercises.name
     snapshots_bucket  = data.aws_s3_bucket.snapshots.id
+
+    # admin คนแรก (สร้างอัตโนมัติท้าย user_data)
+    admin_username     = var.admin_username
+    admin_member_id    = var.admin_member_id
+    admin_password_b64 = base64encode(var.admin_password)
   })
   user_data_replace_on_change = true
 

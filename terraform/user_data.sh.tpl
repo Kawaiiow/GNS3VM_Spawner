@@ -41,8 +41,36 @@ ENV
 chmod 600 backend/.env
 
 docker compose up -d --build
-%{ if has_token ~}
 
-# ลบสำเนา user-data บนดิสก์ที่มี token (ยังเหลือใน instance metadata จึงควร revoke token หลัง deploy)
+# --- สร้าง admin คนแรก ---
+# ปิด xtrace กันรหัสผ่านโผล่ใน /var/log/cloud-init-output.log
+set +x
+ADMIN_PW=$(echo '${admin_password_b64}' | base64 -d)
+ADMIN_CREATED=no
+for i in $(seq 1 20); do
+  if out=$(docker compose run --rm -T \
+        -v /opt/app/backend/scripts:/app/scripts backend \
+        python scripts/create_user.py \
+          -u '${admin_username}' -m '${admin_member_id}' \
+          -p "$ADMIN_PW" -r admin 2>&1); then
+    echo "$out"
+    ADMIN_CREATED=yes
+    break
+  else
+    echo "$out"
+    # create_user.py exit 1 พร้อม "already exists" เมื่อมี user อยู่แล้ว -> ไม่ต้อง retry
+    if grep -q "already exists" <<<"$out"; then
+      ADMIN_CREATED=exists
+      break
+    fi
+    echo "create admin failed (backend/DynamoDB ยังไม่พร้อม?) retry $i/20 ..."
+    sleep 15
+  fi
+done
+unset ADMIN_PW out
+set -x
+echo "admin status: $ADMIN_CREATED"
+
+# ลบสำเนา user-data บนดิสก์ (มี token และ/หรือรหัสผ่าน admin)
+# ยังเหลือใน instance metadata จึงควร revoke token และเปลี่ยนรหัส admin หลัง deploy
 rm -f /var/lib/cloud/instances/*/user-data.txt* /var/lib/cloud/instances/*/scripts/* || true
-%{ endif ~}
