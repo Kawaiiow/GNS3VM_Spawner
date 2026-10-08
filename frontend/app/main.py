@@ -28,13 +28,13 @@ def handle_signin(request: Request, identifier: str = Form(...), password: str =
     if request.cookies.get("access_token"):
         return template.TemplateResponse(request=request, name="404.html", status_code=status.HTTP_404_NOT_FOUND)
     try:
-        response = httpx.post(f"{BACKEND_URL}/auth/login", json={"identifier": identifier, "password": password})
+        response = httpx.post(f"{BACKEND_URL}/auth/login", json={"identifier": identifier, "password": password}, timeout=10.0)
     except:
         return template.TemplateResponse(request=request, name="503.html", status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
     if response.status_code in (401, 403):
         return "ไม่พบบัญชีนี้"
     data = response.json()
-    target = f"/{data["user"]["role"]}/dashboard" if data["user"]["role"] in ("admin", "instructor") else "/dashboard"
+    target = f"/{data['user']['role']}/dashboard" if data["user"]["role"] in ("admin", "instructor") else "/dashboard"
     redirect = RedirectResponse(url=target, status_code=status.HTTP_303_SEE_OTHER)
     redirect.set_cookie(key="access_token", value=data["access_token"], httponly=True, max_age=1440 * 60, samesite="lax")
     redirect.set_cookie(key="username", value=data["user"]["username"], httponly=True, max_age=1440 * 60, samesite="lax")
@@ -45,7 +45,7 @@ def handle_signout(request: Request):
     if not request.cookies.get("access_token"):
         return template.TemplateResponse(request=request, name="404.html", status_code=status.HTTP_404_NOT_FOUND)
     try:
-        httpx.post(f"{BACKEND_URL}/auth/logout", cookies={"access_token": request.cookies.get("access_token")})
+        httpx.post(f"{BACKEND_URL}/auth/logout", cookies={"access_token": request.cookies.get("access_token")}, timeout=10.0)
     except:
         return template.TemplateResponse(request=request, name="503.html", status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
     redirect = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)

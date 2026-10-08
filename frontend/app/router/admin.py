@@ -11,7 +11,7 @@ template = Jinja2Templates(directory="template")
 @router.get("/dashboard")
 def render_admin_dashboard(request: Request):
     try:
-        response = httpx.get(f"{BACKEND_URL}/admin/dashboard", cookies={"access_token": request.cookies.get("access_token", "")})
+        response = httpx.get(f"{BACKEND_URL}/admin/dashboard", cookies={"access_token": request.cookies.get("access_token", "")}, timeout=10.0)
     except:
         return template.TemplateResponse(request=request, name="503.html", status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
     if response.status_code in (401, 403):
@@ -21,7 +21,7 @@ def render_admin_dashboard(request: Request):
 @router.get("/create")
 def render_admin_create(request: Request):
     try:
-        response = httpx.get(f"{BACKEND_URL}/auth/me", cookies={"access_token": request.cookies.get("access_token", "")})
+        response = httpx.get(f"{BACKEND_URL}/auth/me", cookies={"access_token": request.cookies.get("access_token", "")}, timeout=10.0)
     except:
         return template.TemplateResponse(request=request, name="503.html", status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
     if response.status_code in (401, 403):
@@ -31,7 +31,7 @@ def render_admin_create(request: Request):
 @router.post("/create")
 def handle_admin_create(request: Request, name: str = Form(...), surname: str = Form(...), username: str = Form(...), member_id: str = Form(...), password: str = Form(...), role: str = Form(...)):
     try:
-        response = httpx.post(f"{BACKEND_URL}/admin/users", json={"username": username, "member_id": member_id, "password": password, "full_name": f"{name} {surname}", "role": role}, cookies={"access_token": request.cookies.get("access_token", "")})
+        response = httpx.post(f"{BACKEND_URL}/admin/users", json={"username": username, "member_id": member_id, "password": password, "full_name": f"{name} {surname}", "role": role}, cookies={"access_token": request.cookies.get("access_token", "")}, timeout=10.0)
     except:
         return template.TemplateResponse(request=request, name="503.html", status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
     if response.status_code in (401, 403):
@@ -41,7 +41,7 @@ def handle_admin_create(request: Request, name: str = Form(...), surname: str = 
 @router.get("/update/{user_id}")
 def render_admin_update(request: Request, user_id: str):
     try:
-        response = httpx.get(f"{BACKEND_URL}/admin/users/{user_id}", cookies={"access_token": request.cookies.get("access_token", "")})
+        response = httpx.get(f"{BACKEND_URL}/admin/users/{user_id}", cookies={"access_token": request.cookies.get("access_token", "")}, timeout=10.0)
     except:
         return template.TemplateResponse(request=request, name="503.html", status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
     if response.status_code in (401, 403):
@@ -52,7 +52,7 @@ def render_admin_update(request: Request, user_id: str):
 @router.post("/update/{user_id}")
 def handle_admin_update(request: Request, user_id: str, name: str = Form(...), surname: str = Form(...), username: str = Form(...), member_id: str = Form(...), password: str = Form(""), role: str = Form(...)):
     try:
-        response = httpx.patch(f"{BACKEND_URL}/admin/users/{user_id}", json={"username": username, "member_id": member_id, "password": password or None, "full_name": f"{name} {surname}", "role": role}, cookies={"access_token": request.cookies.get("access_token", "")})
+        response = httpx.patch(f"{BACKEND_URL}/admin/users/{user_id}", json={"username": username, "member_id": member_id, "password": password or None, "full_name": f"{name} {surname}", "role": role}, cookies={"access_token": request.cookies.get("access_token", "")}, timeout=10.0)
     except:
         return template.TemplateResponse(request=request, name="503.html", status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
     if response.status_code in (401, 403):
@@ -62,7 +62,7 @@ def handle_admin_update(request: Request, user_id: str, name: str = Form(...), s
 @router.post("/delete/{user_id}")
 def handle_admin_delete(request: Request, user_id: str):
     try:
-        response = httpx.delete(f"{BACKEND_URL}/admin/users/{user_id}", cookies={"access_token": request.cookies.get("access_token", "")})
+        response = httpx.delete(f"{BACKEND_URL}/admin/users/{user_id}", cookies={"access_token": request.cookies.get("access_token", "")}, timeout=10.0)
     except:
         return template.TemplateResponse(request=request, name="503.html", status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
     if response.status_code in (401, 403):
