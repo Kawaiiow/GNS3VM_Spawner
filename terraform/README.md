@@ -94,11 +94,11 @@ cp terraform.tfvars.example terraform.tfvars   # Windows: copy terraform.tfvars.
 แก้ `terraform.tfvars` อย่างน้อย 2 ค่า:
 
 ```hcl
-admin_cidr = "1.2.3.4/32"                                  # ไม่ต้องใส่ SSH ในเว็บได้
-repo_url   = "https://github.com/<owner>/GNS3VM_Spawner.git"   # ห้ามใส่ token ในบรรทัดนี้
-repo_branch = "branch"
-# expose_backend_port = true   # เปิด 8000 ถ้า JS ในหน้าเว็บเรียก backend ตรงๆ จากเบราว์เซอร์
-PowerShell: $env:TF_VAR_github_token="..."   |   bash: export TF_VAR_github_token=...
+admin_cidr  = "x.x.x.x/32" #ไม่ค่อยจำเป็น Connect เข้าไปดูในเว็บได้ <optional>
+repo_url    = "https://github.com/<owner>/GNS3VM_Spawner.git"   # ห้ามใส่ token ในบรรทัดนี้ <require>
+repo_branch = "your branch" <require>
+# expose_backend_port = true   # เปิด 8000 ถ้า JS ในหน้าเว็บเรียก backend ตรงๆ จากเบราว์เซอร์ <optional>
+admin_password = "....." # ใช้สร้าง admin คนแรก <require>
 ```
 
 ถ้า repo เป็น **private** ให้ตั้ง `TF_VAR_github_token` ก่อน apply (ดูหัวข้อ [Repo แบบ private](#repo-แบบ-private-github-token))
@@ -137,14 +137,7 @@ cd /opt/app && docker compose ps                 # backend ต้อง healthy
 
 ### 6) สร้างบัญชี admin คนแรก
 
-บนเครื่อง EC2:
-# SSH เข้าไปใน Webstie Console
-
-```bash
-cd /opt/app
-docker compose run --rm -v $(pwd)/backend/scripts:/app/scripts backend \
-  python scripts/create_user.py -u admin -m ADMIN01 -p '<รหัสผ่านที่ต้องการ>' -r admin
-```
+ใส่รหัสใน ไฟล์ terraform.tfvars
 
 ไม่ต้องรัน `init_dynamodb.py` เพราะ Terraform สร้างตารางให้แล้ว (รันซ้ำจะชื่อชนกัน)
 
