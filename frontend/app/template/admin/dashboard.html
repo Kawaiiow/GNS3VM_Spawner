@@ -7,14 +7,16 @@
 <body class="bg-white">
     {% include "component/navbar.html" %}
     <div class="max-w-6xl min-h-screen mx-auto px-6 py-28">
-        <div class="flex items-center justify-between mb-8">
+        <p class="text-gray-800 text-4xl">ยินดีต้อนรับ, {{ request.cookies.get("username", "Admin") }}</p>
+        <p class="text-gray-600 text-xl mb-12">ภาพรวมและการจัดการระบบทั้งหมดอยู่ในมือคุณ</p>
+        <div class="flex items-center justify-between mb-4">
             <div>
-                <h1 class="text-gray-800 text-3xl">จัดการบัญชี</h1>
-                <p class="text-gray-600 mt-1">เพิ่ม แก้ไข และลบบัญชี</p>
+                <p class="text-gray-800 text-2xl">รายชื่อบัญชีทั้งหมด</p>
+                <p class="text-gray-600 text-md">เพิ่ม แก้ไข และลบบัญชีของผู้ใช้แต่ละคนในระบบ</p>
             </div>
             <a href="/admin/create" class="bg-gray-800 hover:bg-gray-700 transition-colors duration-200 ease-in-out text-white px-4 py-3 rounded-xl text-sm">เพิ่มบัญชี</a>
         </div>
-        <div class="bg-white border rounded-xl overflow-x-auto shadow-sm">
+        <div class="bg-white border rounded-lg overflow-x-auto shadow-sm">
             <table class="min-w-lg w-full">
                 <tr class="text-xs text-gray-600 tracking-wide">
                     <th class="px-4 py-3 text-left">รหัสผู้ใช้</th>
