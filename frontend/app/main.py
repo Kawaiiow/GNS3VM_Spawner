@@ -15,13 +15,17 @@ template = Jinja2Templates(directory="template")
 @app.get("/")
 def render_home(request: Request):
     if request.cookies.get("access_token"):
-        return template.TemplateResponse(request=request, name="404.html", status_code=status.HTTP_404_NOT_FOUND)
+        role = request.cookies.get("role")
+        target = f"/{role}/dashboard" if role in ("admin", "instructor") else "/dashboard"
+        return RedirectResponse(url=target, status_code=status.HTTP_303_SEE_OTHER)
     return template.TemplateResponse(request=request, name="home.html")
 
 @app.get("/signin")
 def render_signin(request: Request):
     if request.cookies.get("access_token"):
-        return template.TemplateResponse(request=request, name="404.html", status_code=status.HTTP_404_NOT_FOUND)
+        role = request.cookies.get("role")
+        target = f"/{role}/dashboard" if role in ("admin", "instructor") else "/dashboard"
+        return RedirectResponse(url=target, status_code=status.HTTP_303_SEE_OTHER)
     return template.TemplateResponse(request=request, name="signin.html")
 
 @app.post("/signin")
@@ -39,6 +43,7 @@ def handle_signin(request: Request, identifier: str = Form(...), password: str =
     redirect = RedirectResponse(url=target, status_code=status.HTTP_303_SEE_OTHER)
     redirect.set_cookie(key="access_token", value=data["access_token"], httponly=True, max_age=1440 * 60, samesite="lax")
     redirect.set_cookie(key="username", value=data["user"]["username"], httponly=True, max_age=1440 * 60, samesite="lax")
+    redirect.set_cookie(key="role", value=data["user"]["role"], httponly=True, max_age=1440 * 60, samesite="lax")
     return redirect
 
 @app.post("/signout")
@@ -52,6 +57,7 @@ def handle_signout(request: Request):
     redirect = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
     redirect.delete_cookie("access_token")
     redirect.delete_cookie("username")
+    redirect.delete_cookie("role")
     return redirect
 
 app.include_router(admin.router, prefix="/admin")
