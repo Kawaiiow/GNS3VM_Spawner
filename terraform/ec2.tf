@@ -35,6 +35,9 @@ resource "aws_instance" "web" {
   })
   user_data_replace_on_change = true
 
+  # destroy: web -> cleanup_lab_vms (terminate VM ของ API) -> SG gns3_vm
+  depends_on = [terraform_data.cleanup_lab_vms]
+
   lifecycle {
     precondition {
       condition     = local.gns3_ami_id != ""
@@ -54,4 +57,27 @@ resource "aws_eip" "web" {
   instance = aws_instance.web.id
   domain   = "vpc"
   tags     = { Name = "${var.project}-web-eip" }
+}
+
+# ตอน destroy: terminate VM ที่ API สร้างขึ้น (Terraform ไม่รู้จัก) ก่อนลบ SG gns3_vm
+# ไม่งั้น SG จะติด DependencyViolation เพราะ ENI ของ VM ยังอ้างถึงอยู่
+resource "terraform_data" "cleanup_lab_vms" {
+  # destroy-time provisioner อ้างได้เฉพาะ self จึงเก็บ region ไว้ใน input
+  input      = var.region
+  depends_on = [aws_security_group.gns3_vm]
+
+  provisioner "local-exec" {
+    when        = destroy
+    environment = { AWS_REGION = self.input }
+    command     = <<-EOT
+      ids=$(aws ec2 describe-instances \
+        --filters Name=tag:Project,Values=gns3-cloud \
+                  Name=instance-state-name,Values=pending,running,stopping,stopped \
+        --query 'Reservations[].Instances[].InstanceId' --output text)
+      if [ -n "$ids" ]; then
+        aws ec2 terminate-instances --instance-ids $ids
+        aws ec2 wait instance-terminated --instance-ids $ids
+      fi
+    EOT
+  }
 }
