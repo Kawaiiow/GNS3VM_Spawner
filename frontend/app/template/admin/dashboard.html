@@ -12,9 +12,9 @@
         <div class="flex items-center justify-between mb-4">
             <div>
                 <p class="text-gray-800 text-2xl">รายชื่อบัญชีทั้งหมด</p>
-                <p class="text-gray-600 text-md">เพิ่ม แก้ไข และลบบัญชีของผู้ใช้แต่ละคนในระบบ</p>
+                <p class="text-gray-600 text-base">เพิ่ม แก้ไข และลบบัญชีของผู้ใช้แต่ละคนในระบบ</p>
             </div>
-            <a href="/admin/create" class="bg-gray-800 hover:bg-gray-700 transition-colors duration-200 ease-in-out text-white px-4 py-3 rounded-xl text-sm">เพิ่มบัญชี</a>
+            <a href="/admin/create" class="bg-gray-800 hover:bg-gray-900 transition-colors duration-200 ease-in-out text-white px-4 py-3 rounded-xl text-sm">เพิ่มบัญชี</a>
         </div>
         <div class="bg-white border rounded-lg overflow-x-auto shadow-sm">
             <table class="min-w-lg w-full">
@@ -39,7 +39,7 @@
                         {% elif sb and sb.state == "stopped" %}
                         <span class="whitespace-nowrap text-xs px-3 py-1.5 rounded-full bg-yellow-600 text-white">หยุดใช้งาน</span>
                         {% else %}
-                        <span class="whitespace-nowrap text-xs px-3 py-1.5 rounded-full bg-orange-600 text-white">ไม่ได้ใช้งาน</span>
+                        <span class="whitespace-nowrap text-xs px-3 py-1.5 rounded-full bg-red-600 text-white">ไม่ได้ใช้งาน</span>
                         {% endif %}
                     </td>
                     <td class="px-4 py-3 text-center text-gray-800">{{ sb.public_ip if sb and sb.public_ip else "-" }}</td>
@@ -49,15 +49,15 @@
                         {% elif ex and ex.state == "stopped" %}
                         <span class="whitespace-nowrap text-xs px-3 py-1.5 rounded-full bg-yellow-600 text-white">หยุดใช้งาน</span>
                         {% else %}
-                        <span class="whitespace-nowrap text-xs px-3 py-1.5 rounded-full bg-orange-600 text-white">ไม่ได้ใช้งาน</span>
+                        <span class="whitespace-nowrap text-xs px-3 py-1.5 rounded-full bg-red-600 text-white">ไม่ได้ใช้งาน</span>
                         {% endif %}
                     </td>
                     <td class="px-4 py-3 text-center text-gray-800">{{ ex.public_ip if ex and ex.public_ip else "-" }}</td>
                     <td class="px-4 py-3 text-right">
                         <div class="flex justify-end gap-2">
-                            <a href="/admin/update/{{ user.user_id }}" class="text-xs px-3 py-2 bg-gray-800 hover:bg-gray-700 transition-colors duration-200 ease-in-out rounded-xl text-white">แก้ไข</a>
+                            <a href="/admin/update/{{ user.user_id }}" class="text-xs px-3 py-2 bg-gray-800 hover:bg-gray-900 transition-colors duration-200 ease-in-out rounded-xl text-white">แก้ไข</a>
                             <form action="/admin/delete/{{ user.user_id }}" method="POST" class="inline">
-                                <button type="submit" class="text-xs px-3 py-2 bg-red-600 hover:bg-red-700 transition-colors duration-200 ease-in-out rounded-xl text-white">ลบ</button>
+                                <button type="submit" class="text-xs px-3 py-2 bg-rose-600 hover:bg-rose-700 transition-colors duration-200 ease-in-out rounded-xl text-white">ลบ</button>
                             </form>
                         </div>
                     </td>
