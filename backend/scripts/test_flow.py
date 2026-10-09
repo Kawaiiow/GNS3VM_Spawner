@@ -29,6 +29,7 @@ from botocore.exceptions import ClientError
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
+from app import ec2_service
 from app.auth import (
     create_access_token,
     decode_access_token,
@@ -503,9 +504,11 @@ class TestFastAPIRoutes(unittest.TestCase):
     @patch("app.main.get_exercise_record")
     @patch("app.main.ec2_service.deregister_image")
     @patch("app.main.delete_exercise_record")
+    @patch("app.main.ec2_service.terminate_instances_for_exercise")
     def test_delete_exercise_by_owner(
-        self, mock_del_rec, mock_deregister, mock_get_rec, mock_auth_user
+        self, mock_terminate, mock_del_rec, mock_deregister, mock_get_rec, mock_auth_user
     ):
+        mock_terminate.return_value = []
         mock_auth_user.return_value = self.mock_instructor_dict
         mock_get_rec.return_value = {
             "exercise_id": "ex-del-1",
@@ -521,20 +524,144 @@ class TestFastAPIRoutes(unittest.TestCase):
 
     @patch("app.auth.get_user_by_id")
     @patch("app.main.get_exercise_record")
-    def test_delete_exercise_forbidden_for_other_user(
-        self, mock_get_rec, mock_auth_user
+    @patch("app.main.ec2_service.deregister_image")
+    @patch("app.main.delete_exercise_record")
+    @patch("app.main.ec2_service.terminate_instances_for_exercise")
+    def test_delete_exercise_by_other_instructor_allowed(
+        self, mock_terminate, mock_del_rec, mock_deregister, mock_get_rec, mock_auth_user
     ):
+        """Instructor ลบแบบฝึกหัดของอาจารย์ท่านอื่นได้ และ VM ของแบบฝึกหัดนั้นถูกลบด้วย"""
         mock_auth_user.return_value = self.mock_instructor_dict
         mock_get_rec.return_value = {
             "exercise_id": "ex-other",
             "instructor_id": "inst-other-999",
             "ami_id": "ami-other",
         }
+        mock_terminate.return_value = ["i-aaa", "i-bbb"]
 
         headers = {"Authorization": f"Bearer {self.instructor_token}"}
         resp = self.client.delete("/exercises/ex-other", headers=headers)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["terminated_instances"], ["i-aaa", "i-bbb"])
+        mock_terminate.assert_called_once_with("ex-other")
+        mock_deregister.assert_called_once_with("ami-other")
+        mock_del_rec.assert_called_once_with("ex-other")
+
+    @patch("app.auth.get_user_by_id")
+    @patch("app.main.get_exercise_record")
+    def test_delete_exercise_forbidden_for_student(self, mock_get_rec, mock_auth_user):
+        mock_auth_user.return_value = self.mock_student_dict
+        mock_get_rec.return_value = {"exercise_id": "ex-1", "instructor_id": "inst-uuid-1"}
+
+        headers = {"Authorization": f"Bearer {self.student_token}"}
+        resp = self.client.delete("/exercises/ex-1", headers=headers)
         self.assertEqual(resp.status_code, 403)
-        self.assertIn("คุณไม่มีสิทธิ์ลบแบบฝึกหัด", resp.json()["detail"])
+        self.assertIn("Instructor or Admin", resp.json()["detail"])
+
+    @patch("app.auth.get_user_by_id")
+    @patch("app.main.get_exercise_record")
+    @patch("app.main.ec2_service.deregister_image")
+    @patch("app.main.delete_exercise_record")
+    @patch("app.main.ec2_service.terminate_instances_for_exercise")
+    def test_delete_exercise_keeps_record_when_vm_terminate_fails(
+        self, mock_terminate, mock_del_rec, mock_deregister, mock_get_rec, mock_auth_user
+    ):
+        """ถ้าลบ VM ไม่ครบ ต้องไม่ลบแบบฝึกหัด/AMI (จะได้ลองใหม่ได้)"""
+        mock_auth_user.return_value = self.mock_admin_dict
+        mock_get_rec.return_value = {
+            "exercise_id": "ex-1",
+            "instructor_id": "inst-uuid-1",
+            "ami_id": "ami-x",
+        }
+        mock_terminate.side_effect = HTTPException(status_code=500, detail="terminate VM ไม่สำเร็จ")
+
+        headers = {"Authorization": f"Bearer {self.admin_token}"}
+        resp = self.client.delete("/exercises/ex-1", headers=headers)
+        self.assertEqual(resp.status_code, 500)
+        mock_deregister.assert_not_called()
+        mock_del_rec.assert_not_called()
+
+    @patch("app.auth.get_user_by_id")
+    @patch("app.main.get_exercise_record")
+    @patch("app.main.ec2_service.deregister_image")
+    @patch("app.main.delete_exercise_record")
+    @patch("app.main.ec2_service.terminate_instances_for_exercise")
+    def test_delete_exercise_never_deregisters_default_ami(
+        self, mock_terminate, mock_del_rec, mock_deregister, mock_get_rec, mock_auth_user
+    ):
+        mock_auth_user.return_value = self.mock_instructor_dict
+        mock_terminate.return_value = []
+        mock_get_rec.return_value = {
+            "exercise_id": "ex-base",
+            "instructor_id": "inst-uuid-1",
+            "ami_id": os.environ["DEFAULT_AMI_ID"],
+        }
+
+        headers = {"Authorization": f"Bearer {self.instructor_token}"}
+        resp = self.client.delete("/exercises/ex-base", headers=headers)
+        self.assertEqual(resp.status_code, 200)
+        mock_deregister.assert_not_called()
+        mock_del_rec.assert_called_once_with("ex-base")
+
+
+class TestExerciseVmCascade(unittest.TestCase):
+    """terminate_instances_for_exercise: ลบ VM ที่มี exercise_id เดียวกันเท่านั้น"""
+
+    @patch("app.ec2_service.db_list_instances_by_exercise")
+    @patch("app.ec2_service.terminate_instance")
+    def test_terminates_every_vm_of_the_exercise(self, mock_term, mock_list):
+        mock_list.return_value = [{"instance_id": "i-1"}, {"instance_id": "i-2"}]
+        result = ec2_service.terminate_instances_for_exercise("ex-1")
+        self.assertEqual(result, ["i-1", "i-2"])
+        mock_list.assert_called_once_with("ex-1")
+        self.assertEqual([c.args[0] for c in mock_term.call_args_list], ["i-1", "i-2"])
+
+    @patch("app.ec2_service.db_list_instances_by_exercise")
+    @patch("app.ec2_service.terminate_instance")
+    def test_no_vm_returns_empty_list(self, mock_term, mock_list):
+        mock_list.return_value = []
+        self.assertEqual(ec2_service.terminate_instances_for_exercise("ex-1"), [])
+        mock_term.assert_not_called()
+
+    @patch("app.ec2_service.db_list_instances_by_exercise")
+    @patch("app.ec2_service.terminate_instance")
+    def test_partial_failure_raises_after_trying_all(self, mock_term, mock_list):
+        mock_list.return_value = [
+            {"instance_id": "i-1"},
+            {"instance_id": "i-bad"},
+            {"instance_id": "i-3"},
+        ]
+
+        def fake_terminate(iid):
+            if iid == "i-bad":
+                raise HTTPException(status_code=400, detail="UnauthorizedOperation")
+            return {}
+
+        mock_term.side_effect = fake_terminate
+        with self.assertRaises(HTTPException) as ctx:
+            ec2_service.terminate_instances_for_exercise("ex-1")
+        self.assertEqual(ctx.exception.status_code, 500)
+        self.assertIn("i-bad", ctx.exception.detail)
+        # ต้องพยายามลบครบทุกเครื่อง ไม่หยุดที่เครื่องที่พัง
+        self.assertEqual(mock_term.call_count, 3)
+
+    @patch("app.ec2_service._release_user_slots")
+    @patch("app.ec2_service.mark_instance_terminated")
+    @patch("app.ec2_service.db_list_instances_by_exercise")
+    @patch("app.ec2_service.terminate_instance")
+    def test_vm_already_gone_from_ec2_is_cleaned_in_db(
+        self, mock_term, mock_list, mock_mark, mock_release
+    ):
+        """EC2 ไม่รู้จักเครื่องแล้ว (Lab ถูกรีเซ็ต) ต้องเก็บกวาด DB + คืนโควตา ไม่ค้างลบไม่ได้"""
+        mock_list.return_value = [{"instance_id": "i-gone"}]
+        mock_term.side_effect = HTTPException(
+            status_code=400,
+            detail="An error occurred (InvalidInstanceID.NotFound) when calling the TerminateInstances operation",
+        )
+        result = ec2_service.terminate_instances_for_exercise("ex-1")
+        self.assertEqual(result, ["i-gone"])
+        mock_mark.assert_called_once_with("i-gone")
+        mock_release.assert_called_once_with("i-gone")
 
 
 if __name__ == "__main__":

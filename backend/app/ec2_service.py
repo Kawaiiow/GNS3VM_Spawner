@@ -31,6 +31,7 @@ from app.dynamodb_service import (
     get_instance_record,
     get_user_by_id,
     list_all_instances as db_list_all_instances,
+    list_instances_by_exercise as db_list_instances_by_exercise,
     list_instances_by_user as db_list_instances_by_user,
     mark_instance_terminated,
     release_user_vm,
@@ -492,6 +493,17 @@ def terminate_instance(instance_id: str) -> dict:
     mark_instance_terminated(instance_id)
 
     # 2. คืนช่องล็อกที่ผูกกับ instance นี้ (Sandbox หรือ Exercise) เพื่อให้สร้างใหม่ได้
+    _release_user_slots(instance_id)
+
+    return {
+        "instance_id": instance_id,
+        "state": state,
+        "message": "instance กำลังถูกลบ (terminate) และปล่อยโควตา VM เรียบร้อยแล้ว",
+    }
+
+
+def _release_user_slots(instance_id: str) -> None:
+    """คืนช่องล็อก (Sandbox / Exercise) ที่ผูกกับ instance นี้ให้เจ้าของ"""
     instance_rec = get_instance_record(instance_id)
     if instance_rec and instance_rec.get("user_id"):
         owner = get_user_by_id(instance_rec["user_id"])
@@ -500,11 +512,37 @@ def terminate_instance(instance_id: str) -> dict:
                 if owner.get(slot) == instance_id:
                     release_user_vm(owner["user_id"], slot)
 
-    return {
-        "instance_id": instance_id,
-        "state": state,
-        "message": "instance กำลังถูกลบ (terminate) และปล่อยโควตา VM เรียบร้อยแล้ว",
-    }
+
+def terminate_instances_for_exercise(exercise_id: str) -> list[str]:
+    """
+    terminate ทุก VM ที่สร้างจากแบบฝึกหัดนี้ (เฉพาะ exercise_id เดียวกัน) และคืนโควตาให้เจ้าของ
+    คืนค่ารายการ instance_id ที่ถูกลบ ถ้ามีบางเครื่องลบไม่สำเร็จจะ raise 500
+    (เรียกซ้ำได้ เพราะเครื่องที่ลบไปแล้วจะไม่ถูกนับอีก)
+    """
+    terminated: list[str] = []
+    failed: list[str] = []
+    for rec in db_list_instances_by_exercise(exercise_id):
+        iid = rec["instance_id"]
+        try:
+            terminate_instance(iid)
+        except HTTPException as e:
+            if "InvalidInstanceID.NotFound" in str(e.detail):
+                # EC2 ไม่รู้จักเครื่องนี้แล้ว (หายไปเอง เช่น Lab ถูกรีเซ็ต) เก็บกวาดฝั่ง DB อย่างเดียว
+                mark_instance_terminated(iid)
+                _release_user_slots(iid)
+            else:
+                failed.append(iid)
+                continue
+        terminated.append(iid)
+    if failed:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"terminate VM ของแบบฝึกหัดไม่สำเร็จ {failed} "
+                "แบบฝึกหัดยังไม่ถูกลบ กรุณาลองใหม่อีกครั้ง"
+            ),
+        )
+    return terminated
 
 
 def create_instance_image(

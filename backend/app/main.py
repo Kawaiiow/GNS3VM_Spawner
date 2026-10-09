@@ -292,7 +292,12 @@ def delete_exercise(
     exercise_id: str,
     current_user: UserInDB = Depends(get_current_instructor_or_admin),
 ):
-    """ลบแบบฝึกหัด Lab (เฉพาะเจ้าของแบบฝึกหัด หรือ Admin)"""
+    """
+    ลบแบบฝึกหัด Lab (Instructor ทุกคน หรือ Admin)
+    - terminate VM ทุกเครื่องที่สร้างจากแบบฝึกหัดนี้ (exercise_id เดียวกัน) และคืนโควตาให้เจ้าของ
+    - ถ้า terminate VM เครื่องใดไม่สำเร็จ จะยังไม่ลบแบบฝึกหัด (ตอบ 500 แล้วลองใหม่ได้)
+    - จากนั้น De-register AMI (ถ้ามี), ลบไฟล์บน S3 (ถ้ามี) และลบแถวใน DynamoDB
+    """
     record = get_exercise_record(exercise_id)
     if not record:
         raise HTTPException(
@@ -300,23 +305,21 @@ def delete_exercise(
             detail=f"Exercise '{exercise_id}' not found.",
         )
 
-    if (
-        current_user.role != UserRole.ADMIN
-        and record.get("instructor_id") != current_user.user_id
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="คุณไม่มีสิทธิ์ลบแบบฝึกหัดของผู้สอนท่านอื่น",
-        )
+    terminated = ec2_service.terminate_instances_for_exercise(exercise_id)
 
-    if record.get("ami_id"):
-        ec2_service.deregister_image(record["ami_id"])
+    # ไม่ De-register AMI หลักของระบบ เผื่อมีคนสร้างแบบฝึกหัดโดยใส่ ami_id ของ Base AMI
+    ami_id = record.get("ami_id")
+    if ami_id and ami_id != get_settings().default_ami_id:
+        ec2_service.deregister_image(ami_id)
 
     if record.get("s3_key"):
         s3_service.delete_object(record["s3_key"])
 
     delete_exercise_record(exercise_id)
-    return {"message": f"Exercise '{exercise_id}' deleted successfully."}
+    return {
+        "message": f"Exercise '{exercise_id}' deleted successfully.",
+        "terminated_instances": terminated,
+    }
 
 
 # ==========================================
