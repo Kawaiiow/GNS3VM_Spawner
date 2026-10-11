@@ -25,7 +25,7 @@ def handle_instructor_create_instance(request: Request, exercise_id: str = Form(
         response = httpx.post(f"{BACKEND_URL}/instances", json={"instance_name": f"gns3-{request.cookies.get('username')}-{'exercise' if exercise_id else 'sandbox'}", "exercise_id": exercise_id}, cookies={"access_token": request.cookies.get("access_token", "")}, timeout=10.0)
     except:
         return template.TemplateResponse(request=request, name="503.html", status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
-    if response.status_code != (401, 403):
+    if response.status_code in (401, 403):
         return template.TemplateResponse(request=request, name="404.html", status_code=status.HTTP_404_NOT_FOUND)
     return RedirectResponse(url="/instructor/dashboard", status_code=status.HTTP_303_SEE_OTHER)
 
