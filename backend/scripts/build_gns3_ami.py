@@ -74,9 +74,14 @@ user = gns3
 password = __BUILD_PASSWORD__
 console_start_port_range = 5900
 console_end_port_range = 5999
+
+[Qemu]
+enable_kvm = false
+
 NETLAB_CONF
 chown -R ubuntu:ubuntu /home/ubuntu/.config
 chmod 600 /home/ubuntu/.config/GNS3/2.2/gns3_server.conf
+
 
 cat > /etc/systemd/system/gns3-server.service <<'NETLAB_UNIT'
 [Unit]
