@@ -331,7 +331,9 @@ def create_exercises_from_projects(
     if payload.project_id:
         wanted_ids.append(payload.project_id)
     # ค่าเริ่มต้น: ถ้าไม่ได้เลือกโปรเจ็คใดเลย = export ทุกโปรเจ็ค
-    export_all = payload.export_all or not wanted_ids
+    # export_all ค่าเริ่มต้นเป็น True: ถ้าไม่ได้ส่ง export_all มาเอง แต่เลือก project_ids ไว้ ให้ export เฉพาะที่เลือก
+    explicit_export_all = "export_all" in payload.model_fields_set and payload.export_all
+    export_all = explicit_export_all or not wanted_ids
     selected = gns3_service.select_projects(projects, wanted_ids, export_all)
 
     created = []

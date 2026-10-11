@@ -72,7 +72,7 @@ class ExerciseCreate(BaseModel):
         None, description="รายการ GNS3 project ID ที่ต้องการ export (ใช้กับ /exercises/export-projects)"
     )
     export_all: bool = Field(
-        False, description="true = export ทุกโปรเจ็คบน VM (ใช้กับ /exercises/export-projects)"
+        True, description="true = export ทุกโปรเจ็คบน VM (ค่าเริ่มต้น; ถ้าระบุ project_ids โดยไม่ส่งฟิลด์นี้ จะ export เฉพาะที่เลือก)"
     )
 
 
