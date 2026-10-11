@@ -318,17 +318,21 @@ def create_exercises_from_projects(
 ):
     """
     Export หลายโปรเจ็คจาก GNS3 ในครั้งเดียว (เฉพาะ Instructor)
-    - export_all=true: export ทุกโปรเจ็คบน VM
-    - project_ids=[...]: export เฉพาะโปรเจ็คที่เลือก
+    - ไม่ระบุ project_ids/project_id (หรือ export_all=true): export ทุกโปรเจ็คบน VM (ค่าเริ่มต้น)
+    - project_ids=[...] (หรือ project_id เดียว): export เฉพาะโปรเจ็คที่เลือก
     - 1 โปรเจ็ค = 1 แบบฝึกหัด (ชื่อ: "<title> - <ชื่อโปรเจ็ค>") แต่ละอันมี status ของตัวเอง
       (pending -> available | failed) จึงมีบางโปรเจ็ค fail ได้โดยไม่กระทบอันอื่น
     """
     instance_rec = _resolve_export_instance(payload.instance_id, current_user)
 
     projects = gns3_service.list_projects(instance_rec)
-    selected = gns3_service.select_projects(
-        projects, payload.project_ids, payload.export_all
-    )
+    # รับทั้ง project_ids (หลายตัว) และ project_id (ตัวเดียว) กันส่งผิดฟิลด์
+    wanted_ids = list(payload.project_ids or [])
+    if payload.project_id:
+        wanted_ids.append(payload.project_id)
+    # ค่าเริ่มต้น: ถ้าไม่ได้เลือกโปรเจ็คใดเลย = export ทุกโปรเจ็ค
+    export_all = payload.export_all or not wanted_ids
+    selected = gns3_service.select_projects(projects, wanted_ids, export_all)
 
     created = []
     for project in selected:

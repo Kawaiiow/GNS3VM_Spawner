@@ -551,10 +551,10 @@ Query: `only_active` (ค่าเริ่มต้น `true`, ใส่ `false
 | :--- | :---: | :--- |
 | `title`, `description` | ✅ | ใช้ร่วมกัน ชื่อแบบฝึกหัดแต่ละอันจะเป็น `"<title> - <ชื่อโปรเจ็ค>"` |
 | `instance_id` | ❌ | VM ที่จะ export (ไม่ส่ง = ใช้ VM ปัจจุบัน/VM เดียวของอาจารย์) |
-| `export_all` | ❌ | `true` = export ทุกโปรเจ็คบน VM |
-| `project_ids` | ❌ | รายการ `project_id` ที่เลือก (ไม่ต้องส่งถ้าใช้ `export_all`) |
+| `project_ids` | ❌ | รายการ `project_id` ที่เลือก (ส่ง `project_id` เดี่ยวก็ได้) ถ้าไม่ส่งจะ **export ทุกโปรเจ็ค** (ค่าเริ่มต้น) |
+| `export_all` | ❌ | `true` = export ทุกโปรเจ็ค (ไม่ส่งก็เท่ากับ `true` เมื่อไม่ได้เลือกโปรเจ็ค; ถ้าเลือกโปรเจ็คไว้จะ export เฉพาะที่เลือก) |
 
-- ต้องส่ง `export_all=true` หรือ `project_ids` อย่างใดอย่างหนึ่ง ไม่เช่นนั้นได้ `400`
+- ไม่ส่ง `project_ids` / `project_id` เลย = export ทุกโปรเจ็คบน VM
 - 1 โปรเจ็ค = 1 แบบฝึกหัด มี `exercise_id`, ไฟล์ S3 และ `status` ของตัวเอง (`pending` → `available` | `failed`) ถ้าบางโปรเจ็ค export ไม่ผ่าน (เช่น ยังมี node รันอยู่) จะเป็น `failed` เฉพาะโปรเจ็คนั้น ไม่กระทบอันอื่น (ดู `status_detail`)
 - background task export ทีละโปรเจ็คตามลำดับ ใช้ `GET /exercises/{id}` ดูสถานะ
 - ต้อง stop node ทุกตัวในแต่ละโปรเจ็คก่อน export และต้องตั้ง `SNAPSHOTS_BUCKET`
@@ -569,7 +569,7 @@ Query: `only_active` (ค่าเริ่มต้น `true`, ใส่ `false
   ]
 }
 ```
-**Error:** `400` ไม่ระบุ `export_all`/`project_ids`, ไม่พบโปรเจ็คที่ระบุ (บอกรายการ id ที่ไม่พบ) หรือไม่มีโปรเจ็คบน VM | `403` ไม่ใช่ Instructor หรือ VM ไม่ใช่ของตัวเอง | `404` ไม่พบ instance | `500` ไม่ได้ตั้ง `SNAPSHOTS_BUCKET` | `502` เชื่อมต่อ GNS3 บน VM ไม่ได้
+**Error:** `400` ไม่พบโปรเจ็คที่ระบุ (บอกรายการ id ที่ไม่พบ) หรือไม่มีโปรเจ็คบน VM | `403` ไม่ใช่ Instructor หรือ VM ไม่ใช่ของตัวเอง | `404` ไม่พบ instance | `500` ไม่ได้ตั้ง `SNAPSHOTS_BUCKET` | `502` เชื่อมต่อ GNS3 บน VM ไม่ได้
 
 ##### `DELETE /exercises/{id}`
 สิทธิ์: Instructor ทุกคน (ลบแบบฝึกหัดของอาจารย์ท่านอื่นได้) หรือ Admin / Student ได้ `403`
