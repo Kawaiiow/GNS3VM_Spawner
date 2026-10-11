@@ -483,6 +483,28 @@ def list_all_instances(include_terminated: bool = False) -> list[dict]:
         )
 
 
+def list_instances_by_exercise(exercise_id: str, include_terminated: bool = False) -> list[dict]:
+    """หา instance ทั้งหมดที่สร้างจากแบบฝึกหัดนี้ (scan + filter เพราะตารางไม่มี index ของ exercise_id)"""
+    table = get_instances_table()
+    items: list[dict] = []
+    kwargs: dict[str, Any] = {"FilterExpression": Attr("exercise_id").eq(exercise_id)}
+    try:
+        while True:
+            response = table.scan(**kwargs)
+            items.extend(response.get("Items", []))
+            if "LastEvaluatedKey" not in response:
+                break
+            kwargs["ExclusiveStartKey"] = response["LastEvaluatedKey"]
+    except ClientError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error listing instances by exercise: {e.response['Error']['Message']}",
+        )
+    if not include_terminated:
+        items = [item for item in items if item.get("state") != "terminated"]
+    return items
+
+
 # ==========================================
 # EXERCISES CRUD
 # ==========================================

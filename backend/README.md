@@ -12,7 +12,7 @@ FastAPI backend สำหรับระบบ **NetLab** ให้นักศ�
 - [ส่วนที่ 0: Quick Start ด้วย Bootstrap Scripts (แนะนำ)](#ส่วนที่-0-quick-start-ด้วย-bootstrap-scripts-แนะนำ)
 - [ส่วนที่ 1: ติดตั้งและรัน Local Backend (ตั้งค่าเอง)](#ส่วนที่-1-การติดตั้งและรัน-local-backend-ตั้งค่าเอง)
 - [การทดสอบระบบ](#-การทดสอบระบบ-automated-tests)
-- [ส่วนที่ 2: ตัวอย่างการเรียกใช้ API](#ส่วนที่-2-สรุปและตัวอย่างการเรียกใช้-api)
+- [API](#api)
 - [ส่วนที่ 3: Deploy ไปยัง Amazon ECR และ AWS ECS (Fargate)](#ส่วนที่-3-การ-deploy-ไปยัง-amazon-ecr-และ-aws-ecs-fargate)
 - [มาตรการความปลอดภัย](#-มาตรการความปลอดภัยและคำแนะนำ)
 
@@ -39,16 +39,17 @@ FastAPI backend สำหรับระบบ **NetLab** ให้นักศ�
    - Ownership Protection: Start / Stop / Terminate ได้เฉพาะ VM ของตัวเอง (Admin ทำได้ทุกเครื่อง)
    - คืนโควตาทันทีเมื่อ Terminate
 3. **Lab Exercises Management**
-   - Instructor สร้างแบบฝึกหัดได้ 2 แบบ: **Snapshot จาก VM ของตัวเอง** (ระบบสั่งสร้าง AMI ให้, สถานะ `pending` → `available`) หรือระบุ `ami_id` ที่มีอยู่แล้ว
-   - นักศึกษาเลือก `exercise_id` ตอนขอสร้าง VM เพื่อเริ่มจากโจทย์/Topology นั้นทันที (VM จะถูกสร้างได้เมื่อ Snapshot เป็น `available`)
-   - ลบแบบฝึกหัดแล้วระบบ De-register AMI ของแบบฝึกหัดนั้นให้ ⚠️ จึง **อย่าสร้างแบบฝึกหัดโดยใส่ `ami_id` ของ GNS3 Base AMI** ไม่งั้นการลบแบบฝึกหัดจะลบ Base AMI ไปด้วย (ให้ใช้วิธี Snapshot จาก VM แทน)
+   - Instructor สร้างแบบฝึกหัดได้ 2 แบบ: **Export โปรเจ็ค GNS3 จาก VM ของตัวเองเป็นไฟล์ `.gns3project` และเก็บใน private S3 bucket** (สถานะ `pending` → `available` หรือ `failed`) หรือระบุ `ami_id` ที่มีอยู่แล้ว
+   - นักศึกษาเลือก `exercise_id` ตอนขอสร้าง VM เพื่อเริ่มจากโจทย์/Topology นั้นทันที เมื่อ S3 export สำเร็จ VM จะ import โปรเจ็คตอน first boot
+   - Instructor ทุกคนลบแบบฝึกหัดของกันและกันได้ (และ Admin) เมื่อลบ ระบบจะ **terminate VM ทุกเครื่องที่สร้างจากแบบฝึกหัดนั้น** (`exercise_id` เดียวกัน) พร้อมคืนโควตา แล้วจึง De-register AMI / ลบไฟล์บน S3 / ลบแถวใน DynamoDB ผู้ที่กำลังทำแล็บนั้นอยู่จะเสียงานที่ยังไม่ได้บันทึกทันที
+   - ระบบไม่ De-register AMI หลัก (`DEFAULT_AMI_ID`) แม้มีคนสร้างแบบฝึกหัดโดยใส่ `ami_id` นั้น
 4. **Automated Provisioning & Verification**
    - `scripts/bootstrap_aws.py` ตั้งค่า AWS + `.env` ให้ครบในคำสั่งเดียว
    - `scripts/build_gns3_ami.py` สร้าง GNS3 Base AMI จากศูนย์แบบอัตโนมัติ
    - `scripts/share_ami.py` แชร์ AMI ให้เพื่อนร่วมทีม
    - `scripts/init_dynamodb.py` สร้างตาราง DynamoDB (On-Demand)
-   - `scripts/test_flow.py` ชุดทดสอบ 26 เคส (ไม่ต้องใช้ AWS จริง)
-   - เอกสาร API ทุก Route ใน [`api_doc.md`](api_doc.md)
+   - `scripts/test_flow.py` ชุดทดสอบ 33 เคส (ไม่ต้องใช้ AWS จริง)
+   - API reference และตัวอย่าง Request/Response อยู่ในส่วนที่ 2 ของเอกสารนี้
 
 ---
 
@@ -90,9 +91,12 @@ erDiagram
     EXERCISES {
         string exercise_id PK "UUID"
         string instructor_id FK "GSI: InstructorIdIndex"
-        string ami_id "AMI ของ Snapshot"
+        string ami_id "Nullable - existing AMI"
         string title
         string description
+        string s3_key "Nullable - exported .gns3project"
+        string project_name "Nullable - GNS3 project"
+        string status_detail "Nullable - export failure detail"
         string status "pending | available | failed"
         boolean is_active
         string created_at "ISO-8601"
@@ -230,32 +234,32 @@ pip install -r requirements.txt
 ```bash
 cp .env.example .env
 ```
-ค่าสำคัญใน `.env`:
-```ini
-AWS_ACCESS_KEY_ID=ASIA...
-AWS_SECRET_ACCESS_KEY=...
-AWS_SESSION_TOKEN=IQoJ...       # (เฉพาะ Learner Lab)
-AWS_REGION=us-east-1
+กรอกค่าใน `.env` ให้ตรงกับ resource ใน AWS Account ของคุณ โดยชื่อตัวแปรด้านล่างตรงกับ `backend/.env.example`:
 
-DEFAULT_AMI_ID=ami-xxxxxxxxxxxxxxxxx
-DEFAULT_INSTANCE_TYPE=t2.micro
-DEFAULT_KEY_NAME=gns3-cloud-keypair
-DEFAULT_SECURITY_GROUP_ID=sg-xxxxxxxxxxxxxxxxx
-INSTANCE_PROFILE_NAME=LabInstanceProfile   # หรือ LabRole ตามที่ Account ของคุณใช้
-MAX_CONCURRENT_INSTANCES=3
+| ตัวแปร | ใช้สำหรับ / ค่าเริ่มต้น |
+|---|---|
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | AWS credentials สำหรับเรียก EC2, DynamoDB และ S3; ถ้าใช้ Instance Profile ไม่ต้องใส่ |
+| `AWS_SESSION_TOKEN` | ใช้เฉพาะ credentials ชั่วคราวของ AWS Academy Learner Lab; Account ปกติปล่อยว่างหรือลบบรรทัดนี้ได้ |
+| `AWS_REGION` | Region ของ AWS; ตัวอย่างใน `.env.example` คือ `us-east-1` |
+| `DEFAULT_AMI_ID` | AMI ที่ติดตั้ง GNS3 แล้ว ใช้เป็น Base AMI ตอนสร้าง VM |
+| `DEFAULT_INSTANCE_TYPE` | EC2 instance type; ตัวอย่างคือ `t2.micro` |
+| `DEFAULT_KEY_NAME` | ชื่อ EC2 Key Pair ที่มีอยู่ใน Region เดียวกัน |
+| `DEFAULT_SECURITY_GROUP_ID` | Security Group ID ของ GNS3 VM |
+| `INSTANCE_PROFILE_NAME` | Instance Profile ที่แนบกับ GNS3 VM; ตัวอย่างใน `.env.example` คือ `LabRole` |
+| `MAX_CONCURRENT_INSTANCES` | จำนวน VM สูงสุดของทั้งระบบ; ตัวอย่างคือ `3` |
+| `USERS_TABLE_NAME`, `INSTANCES_TABLE_NAME`, `EXERCISES_TABLE_NAME` | ชื่อตาราง DynamoDB; ตัวอย่าง `netlab_users`, `netlab_instances`, `netlab_exercises` |
+| `DYNAMODB_ENDPOINT_URL` | ไม่บังคับ; ใช้ระบุ endpoint เช่น `http://localhost:8000` สำหรับ local DynamoDB |
+| `SNAPSHOTS_BUCKET` | ชื่อ private S3 bucket ที่เก็บไฟล์ `.gns3project`; ต้องตั้งค่าหากสร้าง Exercise ด้วยการ export จาก GNS3 |
+| `SNAPSHOTS_PREFIX` | Prefix ของ object ใน bucket; ค่าใน `.env.example` คือ `exercises` |
+| `SNAPSHOT_URL_EXPIRES` | อายุ presigned URL เป็นวินาที; ค่าใน `.env.example` คือ `3600` |
+| `GNS3_API_PORT` | Port ของ GNS3 REST API บน VM อาจารย์; ค่าใน `.env.example` คือ `3080` |
+| `GNS3_PREFER_PRIVATE_IP` | เลือก IP ที่ backend ใช้เชื่อมต่อ GNS3 ก่อน; `false` เหมาะเมื่อ backend รันนอก VPC |
+| `GNS3_EXPORT_TIMEOUT` | Timeout สำหรับ export โปรเจ็คเป็นวินาที; ค่าใน `.env.example` คือ `1800` |
+| `JWT_SECRET_KEY` | Secret สำหรับลงนาม JWT; เปลี่ยนจากค่าตัวอย่างเป็นค่าสุ่มที่ไม่ซ้ำ |
+| `JWT_ALGORITHM` | Algorithm ของ JWT; ตัวอย่างคือ `HS256` |
+| `JWT_EXPIRE_MINUTES` | อายุ JWT เป็นนาที; ตัวอย่างคือ `1440` |
 
-# DynamoDB
-USERS_TABLE_NAME=netlab_users
-INSTANCES_TABLE_NAME=netlab_instances
-EXERCISES_TABLE_NAME=netlab_exercises
-
-# JWT
-JWT_SECRET_KEY=<สุ่มค่ายาวๆ ห้ามใช้ค่าตัวอย่าง>
-JWT_ALGORITHM=HS256
-JWT_EXPIRE_MINUTES=1440
-```
-
-ตัวแปรเสริม (มีค่า default ใน `app/config.py` ไม่ต้องใส่ก็ได้): `GNS3_SET_VM_PASSWORD` (`true`), `GNS3_VM_USER` (`gns3`), `GNS3_CONFIG_PATH`, `GNS3_SERVICE_NAME`, `DYNAMODB_ENDPOINT_URL`
+ค่าตัวอย่างใน `.env.example` เป็น placeholders ไม่ใช่ credentials หรือ resource IDs ที่ใช้งานได้จริง. การสร้าง Exercise แบบ S3 ต้องมี bucket อยู่แล้วและ AWS identity ของ backend ต้องมีสิทธิ์อ่าน/เขียน object ใน bucket. ตัวแปร `GNS3_SET_VM_PASSWORD`, `GNS3_VM_USER`, `GNS3_CONFIG_PATH` และ `GNS3_SERVICE_NAME` มีค่า default ใน `app/config.py` แต่ไม่ได้อยู่ใน `.env.example`.
 
 > ⚠️ ตัวอย่างขนาดเครื่อง `t2.micro` เหมาะกับทดสอบเท่านั้น ถ้า GNS3 ช้าหรือรัน node ไม่ไหว ให้เพิ่มเป็น `t3.medium` ขึ้นไป (`--instance-type t3.medium` ของ `bootstrap_aws.py`)
 
@@ -287,7 +291,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```bash
 python scripts/test_flow.py
 ```
-ทดสอบ **26 เคส** ด้วย mock: bcrypt, JWT, Pydantic models, ล็อกโควตา VM (Sandbox/Exercise), Login / สิทธิ์ตามบทบาท, Ownership, การสร้าง/ลบ Exercise (รวม Snapshot)
+ทดสอบ **33 เคส** ด้วย mock: bcrypt, JWT, Pydantic models, ล็อกโควตา VM (Sandbox/Exercise), Login / สิทธิ์ตามบทบาท, Ownership, การสร้าง/ลบ Exercise (รวม Snapshot)
 
 ### 2) ทดสอบ Bootstrap Scripts (ใช้ AWS Lab จริง)
 
@@ -311,88 +315,388 @@ aws ec2 describe-instances --filters "Name=tag:Name,Values=netlab-gns3-ami-build
 
 ---
 
-## ส่วนที่ 2: สรุปและตัวอย่างการเรียกใช้ API
+## API
 
-> รายละเอียดทุก Endpoint และ Response Model อยู่ที่ [`api_doc.md`](api_doc.md)
+สรุป API Endpoints ของ NetLab Backend พร้อมตัวอย่าง Request / Response JSON
+ลองยิงแบบ Interactive ได้ที่ Swagger UI: `http://localhost:8000/docs`
 
-| กลุ่ม | Endpoint | สิทธิ์ |
-|---|---|---|
-| System | `GET /`, `GET /health` | Public |
-| Auth | `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` | Public / Public / User |
-| Exercises | `GET /exercises`, `GET /exercises/{id}` | Public |
-| | `POST /exercises` | Instructor |
-| | `DELETE /exercises/{id}` | เจ้าของ (Instructor) / Admin |
-| Instances | `POST /instances`, `GET /instances` | User (Admin สร้างไม่ได้) |
-| | `POST /instances/{id}/start`, `/stop`, `DELETE /instances/{id}` | เจ้าของ / Admin |
-| Admin | `POST/GET /admin/users`, `PATCH/DELETE /admin/users/{id}`, `GET /admin/dashboard` | Admin |
+---
 
-### 1. เข้าสู่ระบบ (Username หรือ Member ID)
-```bash
-curl -X POST http://localhost:8000/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"identifier": "6410001", "password": "StudentPass123!"}' \
-  -c cookies.txt
-```
-ระบบเก็บคุกกี้ `access_token` ลง `cookies.txt` และส่ง JWT กลับมาใน Response
+### 📋 ตารางสรุป (Quick Reference)
 
-### 2. ดูข้อมูลโปรไฟล์และสถานะ VM
-```bash
-curl http://localhost:8000/auth/me -b cookies.txt
-# หรือ
-curl http://localhost:8000/auth/me -H "Authorization: Bearer <TOKEN_HERE>"
-```
+| Method | Endpoint | สิทธิ์ | คำอธิบาย |
+| :--- | :--- | :---: | :--- |
+| `GET` | `/` , `/health` | Public | ตรวจสอบสถานะระบบ |
+| `POST` | `/auth/login` | Public | เข้าสู่ระบบ |
+| `POST` | `/auth/logout` | Public | ออกจากระบบ (ลบคุกกี้ `access_token`) |
+| `GET` | `/auth/me` | User | ดูโปรไฟล์และ VM ของตัวเอง |
+| `GET` | `/exercises` | Public | ดูรายการแบบฝึกหัด |
+| `GET` | `/exercises/{id}` | Public | ดูรายละเอียดแบบฝึกหัด |
+| `POST` | `/exercises` | Instructor | สร้างแบบฝึกหัด |
+| `DELETE` | `/exercises/{id}` | Instructor / Admin | ลบแบบฝึกหัด (พร้อมลบ VM ของแบบฝึกหัดนั้นทั้งหมด) |
+| `POST` | `/instances` | Student / Instructor | สร้าง GNS3 VM |
+| `GET` | `/instances` | User | ดูรายการ VM |
+| `POST` | `/instances/{id}/start` | เจ้าของ / Admin | เปิดเครื่อง |
+| `POST` | `/instances/{id}/stop` | เจ้าของ / Admin | ปิดเครื่องชั่วคราว |
+| `DELETE` | `/instances/{id}` | เจ้าของ / Admin | ลบ (Terminate) VM ถาวร |
+| `POST` | `/admin/users` | Admin | สร้างผู้ใช้ |
+| `GET` | `/admin/users` | Admin | ดูรายชื่อผู้ใช้ทั้งหมด |
+| `PATCH` | `/admin/users/{id}` | Admin | แก้ไขผู้ใช้ / รีเซ็ตรหัสผ่าน |
+| `DELETE` | `/admin/users/{id}` | Admin | ลบผู้ใช้ |
+| `GET` | `/admin/dashboard` | Admin | ดูผู้ใช้ทุกคนพร้อม VM |
 
-### 2.1 ออกจากระบบ
-```bash
-curl -X POST http://localhost:8000/auth/logout -b cookies.txt -c cookies.txt
-```
-ระบบลบคุกกี้ `access_token` ให้ (ถ้าใช้ Bearer Token ให้ลบ Token ทิ้งฝั่ง Client เอง เพราะ Token ยังใช้ได้จนหมดอายุ)
+---
 
-### 3. ดูรายการแบบฝึกหัด Lab
-```bash
-curl http://localhost:8000/exercises
-```
+### 🔐 การยืนยันตัวตน
 
-### 4. สร้างแบบฝึกหัด (Instructor)
-```bash
-# Snapshot จาก VM ของอาจารย์ (ระบุ instance_id ถ้ามีหลายเครื่อง)
-curl -X POST http://localhost:8000/exercises -b cookies.txt \
-  -H "Content-Type: application/json" \
-  -d '{"title": "OSPF Lab 1", "description": "ตั้งค่า OSPF 2 Area", "instance_id": "i-0123456789abcdef0"}'
+หลัง Login ส่ง Token ได้ 2 แบบ:
+1. Header: `Authorization: Bearer <access_token>`
+2. Cookie: `access_token` (HttpOnly ตั้งให้อัตโนมัติตอน Login)
 
-# หรือใช้ AMI ที่มีอยู่แล้ว
-curl -X POST http://localhost:8000/exercises -b cookies.txt \
-  -H "Content-Type: application/json" \
-  -d '{"title": "OSPF Lab 1", "description": "ตั้งค่า OSPF 2 Area", "ami_id": "ami-xxxxxxxx"}'
+Token เป็น JWT (HS256) อายุ 24 ชั่วโมง ส่ง Token ผิดหรือหมดอายุได้ `401`
+
+**บทบาทและโควตา VM**
+- `student`: Sandbox 1 เครื่อง + Exercise 1 เครื่อง
+- `instructor`: ไม่จำกัด
+- `admin`: สร้าง VM ไม่ได้
+
+---
+
+### ⚠️ รูปแบบ Error
+
+```json
+{ "detail": "ข้อความอธิบายข้อผิดพลาด" }
 ```
 
-### 5. ขอสร้าง GNS3 VM
-```bash
-# Sandbox (VM ว่าง)
-curl -X POST http://localhost:8000/instances -b cookies.txt \
-  -H "Content-Type: application/json" \
-  -d '{"instance_name": "gns3-student01-sandbox"}'
+| Status | ความหมาย |
+| :---: | :--- |
+| `400` | Request ไม่ถูกต้อง / ผิดเงื่อนไข (เช่น มี VM ในช่องนั้นแล้ว) |
+| `401` | ไม่ได้ล็อกอิน / Token ผิด / หมดอายุ |
+| `403` | ไม่มีสิทธิ์ |
+| `404` | ไม่พบข้อมูล |
+| `409` | ข้อมูลซ้ำ / ลบไม่ได้ |
+| `422` | Body ไม่ครบหรือรูปแบบผิด |
+| `429` | VM ทั้งระบบถึงขีดจำกัด (`MAX_CONCURRENT_INSTANCES`) |
 
-# จากแบบฝึกหัด
-curl -X POST http://localhost:8000/instances -b cookies.txt \
-  -H "Content-Type: application/json" \
-  -d '{"instance_name": "gns3-lab1-vm", "exercise_id": "<EXERCISE_ID>"}'
-```
-*นักศึกษาที่มี VM ในช่องนั้นอยู่แล้ว (Sandbox หรือ Exercise) จะได้ `400 Bad Request` ส่วนถ้า VM ทั้งโปรเจกต์ถึง `MAX_CONCURRENT_INSTANCES` จะได้ `429`*
+---
 
-### 6. ดูรายการ VM (พร้อมรหัสเข้า GNS3 ของเครื่องตัวเอง)
-```bash
-curl http://localhost:8000/instances -b cookies.txt
-```
-ผลลัพธ์มี `public_ip`, `gns3_user`, `gns3_password` เปิด GNS3 ได้ที่ `http://<public_ip>:3080`
+### 📦 Object ที่ใช้ซ้ำ
 
-### 7. เปิด / ปิด / ลบ VM
-```bash
-curl -X POST   http://localhost:8000/instances/i-0123456789abcdef0/start -b cookies.txt
-curl -X POST   http://localhost:8000/instances/i-0123456789abcdef0/stop  -b cookies.txt
-curl -X DELETE http://localhost:8000/instances/i-0123456789abcdef0       -b cookies.txt
+**User**
+```json
+{
+  "user_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "username": "student01",
+  "member_id": "6410001",
+  "full_name": "Somchai Student",
+  "role": "student",
+  "active_instance_id": null,
+  "active_exercise_instance_id": null,
+  "created_at": "2026-09-20T14:00:00.000000+00:00",
+  "updated_at": "2026-09-20T14:00:00.000000+00:00"
+}
 ```
-*Terminate แล้วสถานะใน DynamoDB เป็น `terminated` และโควตาถูกคืนทันที (Stop แล้ว Public IP จะหาย Start ใหม่จะได้ IP ใหม่)*
+`role` = `student` | `instructor` | `admin` ส่วน `active_instance_id` / `active_exercise_instance_id` คือ Sandbox / Exercise VM ที่ถืออยู่ (`null` ถ้าไม่มี)
+
+**Instance**
+```json
+{
+  "instance_id": "i-0123456789abcdef0",
+  "user_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "exercise_id": null,
+  "name": "gns3-student01-sandbox",
+  "state": "running",
+  "instance_type": "t3.medium",
+  "public_ip": "54.200.12.34",
+  "private_ip": "172.31.10.5",
+  "launch_time": "2026-09-27T14:10:00.000000+00:00",
+  "created_at": "2026-09-27T14:10:00.000000+00:00",
+  "terminated_at": null,
+  "gns3_user": "gns3",
+  "gns3_password": "k3Jx9QmZpA7vTn2R"
+}
+```
+- `state` = `pending` | `running` | `stopping` | `stopped` | `shutting-down` | `terminated`
+- `exercise_id` เป็น `null` = Sandbox, มีค่า = Exercise VM
+- `public_ip` เป็น `null` เมื่อเครื่องยังไม่ `running` หรือถูก Stop
+- `gns3_user` / `gns3_password` คือรหัสเข้า GNS3 (`http://<public_ip>:3080`) ส่งให้เจ้าของ VM เท่านั้น (Admin ได้ `null`)
+
+**Exercise**
+```json
+{
+  "exercise_id": "7b1e0c3a-92f4-4d51-8a1c-0f6d3b2a9e11",
+  "instructor_id": "c1d2e3f4-0000-4a5b-9c8d-111122223333",
+  "title": "Lab 1: Basic OSPF Routing",
+  "description": "ตั้งค่า OSPF single-area บน Router 3 ตัว",
+  "ami_id": null,
+  "is_active": true,
+  "s3_key": "exercises/7b1e0c3a-92f4-4d51-8a1c-0f6d3b2a9e11.gns3project",
+  "project_name": "Lab 1: Basic OSPF Routing",
+  "status_detail": null,
+  "status": "available",
+  "created_at": "2026-09-27T10:00:00.000000+00:00"
+}
+```
+`status` = `pending` (กำลัง export โปรเจ็ค) | `available` (พร้อมใช้) | `failed`
+
+---
+
+### 🛠️ รายละเอียดแต่ละ Endpoint
+
+#### 1. System
+
+##### `GET /health`
+**Response `200`**
+```json
+{ "status": "ok", "service": "netlab-backend" }
+```
+
+---
+
+#### 2. Auth
+
+##### `POST /auth/login`
+เข้าสู่ระบบด้วย Username หรือ Member ID
+**Request**
+```json
+{ "identifier": "student01", "password": "StudentPass123!" }
+```
+**Response `200`**
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIs...",
+  "token_type": "bearer",
+  "user": { "...": "User object" }
+}
+```
+**Error:** `401` ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง
+
+##### `POST /auth/logout`
+ออกจากระบบ ลบคุกกี้ `access_token` ฝั่ง Server (ไม่ต้องส่ง Body และไม่ต้องล็อกอิน เรียกซ้ำได้)
+**Response `200`**
+```json
+{ "message": "Logged out successfully." }
+```
+> ⚠️ JWT เป็นแบบ Stateless Logout ลบได้แค่คุกกี้ ส่วน Token ที่ถูกเก็บไว้ที่อื่น (เช่น ที่ใช้ผ่าน `Authorization: Bearer`) ยังใช้ได้จนหมดอายุ ฝั่ง Client ต้องลบ Token ทิ้งเองด้วย
+
+##### `GET /auth/me`
+**Response `200`**: User object (`active_instance_id` และ `active_exercise_instance_id` เป็นค่าล่าสุด)
+
+---
+
+#### 3. Exercises
+
+##### `GET /exercises`
+Query: `only_active` (ค่าเริ่มต้น `true`, ใส่ `false` เพื่อดูทั้งหมด)
+**Response `200`**
+```json
+{
+  "count": 1,
+  "exercises": [ { "...": "Exercise object" } ]
+}
+```
+
+##### `GET /exercises/{id}`
+สำหรับ Exercise ที่ผูกกับ AMI ถ้า `status` ยังเป็น `pending` ระบบ sync สถานะกับ EC2; ส่วนสถานะ S3 export อัปเดตโดย background task
+**Response `200`**: Exercise object
+**Error:** `404`
+
+##### `POST /exercises`
+สิทธิ์: **Instructor เท่านั้น** (Admin / Student ได้ `403`)
+**Request**
+```json
+{
+  "title": "Lab 2: BGP Configuration",
+  "description": "ตั้งค่า eBGP peering ระหว่าง 2 AS",
+  "instance_id": "i-0123456789abcdef0",
+  "project_id": "project-uuid",
+  "ami_id": null
+}
+```
+| ฟิลด์ | จำเป็น | คำอธิบาย |
+| :--- | :---: | :--- |
+| `title`, `description` | ✅ | ชื่อและโจทย์ |
+| `instance_id` | ❌ | VM ที่จะทำ Snapshot (ไม่ส่ง = ใช้ VM ปัจจุบันของอาจารย์) |
+| `ami_id` | ❌ | ใช้ AMI ที่มีอยู่แล้ว (ไม่ทำ Snapshot, สถานะ `available` ทันที) |
+
+ถ้าไม่ส่ง `ami_id` ระบบ export โปรเจ็ค GNS3 (`.gns3project`) จาก VM ไปยัง private S3 bucket แบบ background และตั้งสถานะ `pending` ก่อนเปลี่ยนเป็น `available` หรือ `failed` (ตรวจ `status_detail` เมื่อ export ล้มเหลว). ระบุ `instance_id` เพื่อเลือก VM และ `project_id` หากมีหลายโปรเจ็ค; ถ้าไม่ระบุจะใช้ VM/โปรเจ็คเดียวที่มี. ต้อง stop node ทุกตัวในโปรเจ็คก่อน export. การทำงานนี้ต้องตั้ง `SNAPSHOTS_BUCKET` ใน `.env`; ถ้าไม่ตั้งจะได้ `500`. หากส่ง `ami_id` ที่มีอยู่แล้วจะผูกกับ AMI โดยตรงและไม่ export.
+**Response `201`**: Exercise object (`"status": "pending"`)
+**Error:** `400` ไม่มี VM / มีหลาย VM แต่ไม่ระบุ `instance_id` | `403` ไม่ใช่ Instructor หรือ VM ไม่ใช่ของตัวเอง
+
+##### `DELETE /exercises/{id}`
+สิทธิ์: Instructor ทุกคน (ลบแบบฝึกหัดของอาจารย์ท่านอื่นได้) หรือ Admin / Student ได้ `403`
+
+สิ่งที่ระบบทำตามลำดับ:
+1. Terminate **ทุก VM ที่สร้างจากแบบฝึกหัดนี้** (`exercise_id` เดียวกัน ไม่แตะ Sandbox หรือแบบฝึกหัดอื่น) และคืนโควตา Exercise ให้เจ้าของ VM
+2. De-register AMI ของแบบฝึกหัด (ข้าม AMI หลักตาม `DEFAULT_AMI_ID` เสมอ) และลบไฟล์บน S3 ถ้ามี
+3. ลบแถวแบบฝึกหัดใน DynamoDB
+
+**Response `200`**
+```json
+{
+  "message": "Exercise '7b1e0c3a-...' deleted successfully.",
+  "terminated_instances": ["i-0123456789abcdef0", "i-0fedcba9876543210"]
+}
+```
+`terminated_instances` เป็นอาร์เรย์ว่าง `[]` ถ้าไม่มี VM ของแบบฝึกหัดนี้เหลืออยู่
+
+**Error:** `403` ไม่ใช่ Instructor / Admin | `404` ไม่พบแบบฝึกหัด | `500` Terminate VM บางเครื่องไม่สำเร็จ (แบบฝึกหัดยังไม่ถูกลบ ลองเรียกซ้ำได้)
+
+---
+
+#### 4. Instances (VM)
+
+##### `POST /instances`
+สร้าง GNS3 VM ผูกกับผู้ใช้ที่ล็อกอิน (Admin สร้างไม่ได้ ได้ `403`)
+**Request**
+```json
+{
+  "instance_name": "gns3-lab1-student01",
+  "exercise_id": "7b1e0c3a-92f4-4d51-8a1c-0f6d3b2a9e11",
+  "instance_type": "t3.medium",
+  "ami_id": null
+}
+```
+| ฟิลด์ | จำเป็น | คำอธิบาย |
+| :--- | :---: | :--- |
+| `instance_name` | ✅ | ชื่อ VM |
+| `exercise_id` | ❌ | ไม่ส่ง = Sandbox, ส่ง = Exercise VM (แบบฝึกหัดต้อง `available`) |
+| `instance_type` | ❌ | ไม่ส่งใช้ค่า Default จาก `.env` |
+| `ami_id` | ❌ | ไม่ส่งใช้ AMI ของ exercise หรือ Default |
+
+**Response `201`**: Instance object (`state` เป็น `pending`, `public_ip` เป็น `null` ให้เรียก `GET /instances` ซ้ำจนเป็น `running`)
+**Error:** `400` มี VM ในช่องนั้นแล้ว / แบบฝึกหัดไม่พร้อม | `403` Admin | `429` VM ทั้งระบบเต็ม
+
+##### `GET /instances`
+Sync สถานะและ IP จาก EC2 ทุกครั้งที่เรียก (ไม่รวม VM ที่ `terminated`)
+- Student / Instructor: เห็นเฉพาะ VM ของตัวเอง (พร้อม `gns3_user`, `gns3_password`)
+- Admin: เห็น VM ทุกคน (`gns3_user`, `gns3_password` เป็น `null`)
+
+**Response `200`**
+```json
+{
+  "count": 1,
+  "instances": [ { "...": "Instance object" } ]
+}
+```
+
+##### `POST /instances/{id}/start`
+เปิดเครื่องที่ Stop ไว้ รอจนเครื่อง `running` (สูงสุดประมาณ 2 นาที) เพื่อให้ได้ Public IP ใหม่
+**Response `200`**
+```json
+{
+  "instance_id": "i-0123456789abcdef0",
+  "state": "running",
+  "message": "instance เริ่มทำงานแล้ว",
+  "public_ip": "3.91.45.120"
+}
+```
+ถ้ายังไม่พร้อมเมื่อหมดเวลา จะได้ `"state": "pending"` และ `"public_ip": null`
+
+##### `POST /instances/{id}/stop`
+ปิดเครื่องชั่วคราว (ยังนับเป็นโควตา, Public IP จะหาย)
+**Response `200`**
+```json
+{
+  "instance_id": "i-0123456789abcdef0",
+  "state": "stopping",
+  "message": "instance กำลังปิดเครื่อง",
+  "public_ip": null
+}
+```
+
+##### `DELETE /instances/{id}`
+Terminate ถาวรและคืนโควตาให้เจ้าของ
+**Response `200`**
+```json
+{
+  "instance_id": "i-0123456789abcdef0",
+  "state": "shutting-down",
+  "message": "instance กำลังถูกลบ (terminate) และปล่อยโควตา VM เรียบร้อยแล้ว",
+  "public_ip": null
+}
+```
+
+**Error ของ start / stop / delete:** `403` ไม่ใช่ VM ของตัวเอง | `404` ไม่พบ instance
+
+---
+
+#### 5. Admin (เฉพาะ Admin)
+
+##### `POST /admin/users`
+**Request**
+```json
+{
+  "username": "student02",
+  "member_id": "6410002",
+  "password": "SecurePass123!",
+  "full_name": "Somying Student",
+  "role": "student"
+}
+```
+| ฟิลด์ | จำเป็น | คำอธิบาย |
+| :--- | :---: | :--- |
+| `username`, `member_id` | ✅ | ต้องไม่ซ้ำ |
+| `password` | ✅ | อย่างน้อย 6 ตัวอักษร |
+| `full_name` | ❌ | ชื่อ-นามสกุล |
+| `role` | ❌ | `student` (ค่าเริ่มต้น) / `instructor` / `admin` |
+
+**Response `201`**: User object
+**Error:** `400` Username หรือ Member ID ซ้ำ | `422`
+
+##### `GET /admin/users`
+**Response `200`**: อาร์เรย์ของ User object
+```json
+[ { "...": "User object" }, { "...": "User object" } ]
+```
+
+##### `PATCH /admin/users/{id}`
+ส่งเฉพาะฟิลด์ที่ต้องการแก้ (ใส่ `password` เพื่อรีเซ็ตรหัสผ่าน)
+**Request**
+```json
+{ "role": "instructor", "password": "NewPass456!" }
+```
+ฟิลด์ที่ใช้ได้: `username`, `member_id`, `full_name`, `role`, `password` (ไม่จำเป็นทั้งหมด)
+**Response `200`**: User object หลังแก้ไข
+**Error:** `400` ไม่มีข้อมูลแก้ไข / ลดสิทธิ์ admin ของตัวเอง | `404` | `409` Username หรือ Member ID ซ้ำ
+
+##### `DELETE /admin/users/{id}`
+**Response `200`**
+```json
+{ "message": "User 'student02' deleted successfully." }
+```
+**Error:** `400` ลบบัญชีตัวเอง | `404` | `409` ผู้ใช้ยังมี VM ใช้งานอยู่ (ต้อง Terminate ก่อน)
+
+##### `GET /admin/dashboard`
+ผู้ใช้ทุกคนพร้อม VM ที่ยังไม่ถูกลบ (sync กับ EC2 ก่อนแสดง)
+**Response `200`**
+```json
+[
+  {
+    "user_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "username": "student01",
+    "member_id": "6410001",
+    "full_name": "Somchai Student",
+    "role": "student",
+    "instances": [
+      {
+        "instance_id": "i-0123456789abcdef0",
+        "name": "gns3-student01-sandbox",
+        "kind": "sandbox",
+        "exercise_id": null,
+        "state": "running",
+        "public_ip": "54.200.12.34"
+      }
+    ]
+  }
+]
+```
+`kind` = `sandbox` | `exercise`
+
+#### การสร้าง VM จาก Exercise ที่ export ไม่สำเร็จ (โหมดทดสอบ)
+
+การตั้งค่าทดสอบชั่วคราวใน backend อนุญาตให้สร้าง VM จาก Base AMI ได้เมื่อ Exercise ที่เก็บบน S3 มีสถานะ `failed`; โปรเจ็คจะไม่ถูก import ลง VM. Exercise ที่ยัง pending หรือ Exercise แบบ AMI ที่ `failed` ยังสร้าง VM ไม่ได้.
+
 
 ---
 
