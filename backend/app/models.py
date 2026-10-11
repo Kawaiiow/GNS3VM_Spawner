@@ -68,6 +68,12 @@ class ExerciseCreate(BaseModel):
     ami_id: Optional[str] = Field(
         None, description="AMI ID (ถ้ามี AMI อยู่แล้วและไม่ต้องการทำ Snapshot ใหม่)"
     )
+    project_ids: Optional[list[str]] = Field(
+        None, description="รายการ GNS3 project ID ที่ต้องการ export (ใช้กับ /exercises/export-projects)"
+    )
+    export_all: bool = Field(
+        False, description="true = export ทุกโปรเจ็คบน VM (ใช้กับ /exercises/export-projects)"
+    )
 
 
 class ExerciseResponse(ExerciseBase):

@@ -172,6 +172,42 @@ def _verify_instance_ownership(instance_id: str, user: UserInDB):
         )
 
 
+def _resolve_export_instance(instance_id: Optional[str], current_user: UserInDB) -> dict:
+    """หา VM ที่จะ export จาก (ตรวจสิทธิ์ + ตั้งค่า bucket) แล้วคืน instance record"""
+    settings = get_settings()
+    if not settings.snapshots_bucket:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="ยังไม่ได้ตั้งค่า SNAPSHOTS_BUCKET ใน .env",
+        )
+
+    target_instance_id = instance_id or current_user.active_instance_id
+    if not target_instance_id:
+        # Instructor ไม่จำกัดจำนวน VM: ถ้าไม่ระบุ instance_id จะใช้เครื่องที่มีอยู่เครื่องเดียว
+        live = list_instances_by_user(current_user.user_id)
+        if len(live) > 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="มี VM หลายเครื่อง กรุณาระบุ instance_id ที่ต้องการ export",
+            )
+        if live:
+            target_instance_id = live[0]["instance_id"]
+    if not target_instance_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="กรุณาระบุ instance_id หรือเปิด VM เพื่อสร้างแบบฝึกหัด (หรือระบุ ami_id)",
+        )
+
+    _verify_instance_ownership(target_instance_id, current_user)
+    instance_rec = get_instance_record(target_instance_id)
+    if not instance_rec:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"ไม่พบข้อมูล instance {target_instance_id}",
+        )
+    return instance_rec
+
+
 # ==========================================
 # EXERCISES (LAB TEMPLATES & SNAPSHOTS) ENDPOINTS
 # ==========================================
@@ -229,37 +265,7 @@ def create_exercise(
         )
         return ExerciseResponse(**item)
 
-    settings = get_settings()
-    if not settings.snapshots_bucket:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="ยังไม่ได้ตั้งค่า SNAPSHOTS_BUCKET ใน .env",
-        )
-
-    target_instance_id = payload.instance_id or current_user.active_instance_id
-    if not target_instance_id:
-        # Instructor ไม่จำกัดจำนวน VM: ถ้าไม่ระบุ instance_id จะใช้เครื่องที่มีอยู่เครื่องเดียว
-        live = list_instances_by_user(current_user.user_id)
-        if len(live) > 1:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="มี VM หลายเครื่อง กรุณาระบุ instance_id ที่ต้องการ export",
-            )
-        if live:
-            target_instance_id = live[0]["instance_id"]
-    if not target_instance_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="กรุณาระบุ instance_id หรือเปิด VM เพื่อสร้างแบบฝึกหัด (หรือระบุ ami_id)",
-        )
-
-    _verify_instance_ownership(target_instance_id, current_user)
-    instance_rec = get_instance_record(target_instance_id)
-    if not instance_rec:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"ไม่พบข้อมูล instance {target_instance_id}",
-        )
+    instance_rec = _resolve_export_instance(payload.instance_id, current_user)
 
     # ตรวจสอบเบื้องต้นแบบ synchronous (VM เปิดอยู่, รหัสผ่านถูก, เลือกโปรเจ็คได้) แล้วค่อย export เบื้องหลัง
     projects = gns3_service.list_projects(instance_rec)
@@ -285,6 +291,68 @@ def create_exercise(
         s3_key,
     )
     return ExerciseResponse(**item)
+
+
+@app.get("/instances/{instance_id}/gns3/projects")
+def list_gns3_projects(
+    instance_id: str,
+    current_user: UserInDB = Depends(get_current_instructor_or_admin),
+):
+    """แสดงรายชื่อโปรเจ็คทั้งหมดที่มีใน GNS3 บน VM นี้ (ใช้เลือกก่อน export)"""
+    _verify_instance_ownership(instance_id, current_user)
+    instance_rec = get_instance_record(instance_id)
+    if not instance_rec:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"ไม่พบข้อมูล instance {instance_id}",
+        )
+    projects = gns3_service.list_projects(instance_rec)
+    return {"instance_id": instance_id, "count": len(projects), "projects": projects}
+
+
+@app.post("/exercises/export-projects", response_model=ExerciseListResponse, status_code=201)
+def create_exercises_from_projects(
+    payload: ExerciseCreate,
+    background_tasks: BackgroundTasks,
+    current_user: UserInDB = Depends(get_current_instructor_user),
+):
+    """
+    Export หลายโปรเจ็คจาก GNS3 ในครั้งเดียว (เฉพาะ Instructor)
+    - export_all=true: export ทุกโปรเจ็คบน VM
+    - project_ids=[...]: export เฉพาะโปรเจ็คที่เลือก
+    - 1 โปรเจ็ค = 1 แบบฝึกหัด (ชื่อ: "<title> - <ชื่อโปรเจ็ค>") แต่ละอันมี status ของตัวเอง
+      (pending -> available | failed) จึงมีบางโปรเจ็ค fail ได้โดยไม่กระทบอันอื่น
+    """
+    instance_rec = _resolve_export_instance(payload.instance_id, current_user)
+
+    projects = gns3_service.list_projects(instance_rec)
+    selected = gns3_service.select_projects(
+        projects, payload.project_ids, payload.export_all
+    )
+
+    created = []
+    for project in selected:
+        exercise_id = str(uuid.uuid4())
+        s3_key = s3_service.build_exercise_key(exercise_id)
+        item = create_exercise_record(
+            exercise_id=exercise_id,
+            instructor_id=current_user.user_id,
+            title=f"{payload.title} - {project['name']}",
+            description=payload.description,
+            s3_key=s3_key,
+            project_name=project["name"],
+            status="pending",
+            is_active=True,
+        )
+        background_tasks.add_task(
+            gns3_service.export_exercise_to_s3,
+            exercise_id,
+            instance_rec,
+            project["project_id"],
+            s3_key,
+        )
+        created.append(ExerciseResponse(**item))
+    return ExerciseListResponse(count=len(created), exercises=created)
 
 
 @app.delete("/exercises/{exercise_id}", status_code=200)

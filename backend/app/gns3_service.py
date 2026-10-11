@@ -82,6 +82,33 @@ def pick_project(projects: list[dict], project_id: Optional[str]) -> dict:
     return projects[0]
 
 
+def select_projects(
+    projects: list[dict],
+    project_ids: Optional[list[str]] = None,
+    export_all: bool = False,
+) -> list[dict]:
+    """เลือกโปรเจ็คที่จะ export: ทุกโปรเจ็ค (export_all) หรือเฉพาะ project_ids ที่ระบุ"""
+    if not projects:
+        raise HTTPException(status_code=400, detail="ไม่พบโปรเจ็คใน GNS3 บน VM นี้ ให้สร้างโปรเจ็คก่อน")
+    if export_all:
+        return projects
+    if not project_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="กรุณาระบุ project_ids หรือตั้ง export_all=true",
+        )
+    by_id = {p["project_id"]: p for p in projects}
+    # ตัดค่าซ้ำแต่คงลำดับที่ผู้ใช้ส่งมา
+    wanted = list(dict.fromkeys(project_ids))
+    missing = [pid for pid in wanted if pid not in by_id]
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"ไม่พบโปรเจ็คเหล่านี้บน VM: {', '.join(missing)}",
+        )
+    return [by_id[pid] for pid in wanted]
+
+
 def _error_text(e: Exception) -> str:
     return str(getattr(e, "detail", None) or e)[:500]
 

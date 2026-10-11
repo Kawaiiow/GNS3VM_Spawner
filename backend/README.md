@@ -40,6 +40,7 @@ FastAPI backend สำหรับระบบ **NetLab** ให้นักศ�
    - คืนโควตาทันทีเมื่อ Terminate
 3. **Lab Exercises Management**
    - Instructor สร้างแบบฝึกหัดได้ 2 แบบ: **Export โปรเจ็ค GNS3 จาก VM ของตัวเองเป็นไฟล์ `.gns3project` และเก็บใน private S3 bucket** (สถานะ `pending` → `available` หรือ `failed`) หรือระบุ `ami_id` ที่มีอยู่แล้ว
+   - Instructor **ดูรายชื่อโปรเจ็คทั้งหมดใน GNS3 ของ VM ตัวเอง** (`GET /instances/{id}/gns3/projects`) แล้วเลือก Export **เฉพาะบางโปรเจ็ค** หรือ **ทุกโปรเจ็ค** ได้ในครั้งเดียว (`POST /exercises/export-projects`) โดย 1 โปรเจ็ค = 1 แบบฝึกหัด และแต่ละอันมีสถานะของตัวเอง
    - นักศึกษาเลือก `exercise_id` ตอนขอสร้าง VM เพื่อเริ่มจากโจทย์/Topology นั้นทันที เมื่อ S3 export สำเร็จ VM จะ import โปรเจ็คตอน first boot
    - Instructor ทุกคนลบแบบฝึกหัดของกันและกันได้ (และ Admin) เมื่อลบ ระบบจะ **terminate VM ทุกเครื่องที่สร้างจากแบบฝึกหัดนั้น** (`exercise_id` เดียวกัน) พร้อมคืนโควตา แล้วจึง De-register AMI / ลบไฟล์บน S3 / ลบแถวใน DynamoDB ผู้ที่กำลังทำแล็บนั้นอยู่จะเสียงานที่ยังไม่ได้บันทึกทันที
    - ระบบไม่ De-register AMI หลัก (`DEFAULT_AMI_ID`) แม้มีคนสร้างแบบฝึกหัดโดยใส่ `ami_id` นั้น
@@ -333,9 +334,11 @@ aws ec2 describe-instances --filters "Name=tag:Name,Values=netlab-gns3-ami-build
 | `GET` | `/exercises` | Public | ดูรายการแบบฝึกหัด |
 | `GET` | `/exercises/{id}` | Public | ดูรายละเอียดแบบฝึกหัด |
 | `POST` | `/exercises` | Instructor | สร้างแบบฝึกหัด |
+| `POST` | `/exercises/export-projects` | Instructor | Export หลายโปรเจ็ค (เลือกบางอัน หรือ `export_all`) เป็นแบบฝึกหัดหลายอัน |
 | `DELETE` | `/exercises/{id}` | Instructor / Admin | ลบแบบฝึกหัด (พร้อมลบ VM ของแบบฝึกหัดนั้นทั้งหมด) |
 | `POST` | `/instances` | Student / Instructor | สร้าง GNS3 VM |
 | `GET` | `/instances` | User | ดูรายการ VM |
+| `GET` | `/instances/{id}/gns3/projects` | Instructor / Admin (เจ้าของ VM) | ดูรายชื่อโปรเจ็คที่มีใน GNS3 บน VM |
 | `POST` | `/instances/{id}/start` | เจ้าของ / Admin | เปิดเครื่อง |
 | `POST` | `/instances/{id}/stop` | เจ้าของ / Admin | ปิดเครื่องชั่วคราว |
 | `DELETE` | `/instances/{id}` | เจ้าของ / Admin | ลบ (Terminate) VM ถาวร |
@@ -519,9 +522,54 @@ Query: `only_active` (ค่าเริ่มต้น `true`, ใส่ `false
 | `instance_id` | ❌ | VM ที่จะทำ Snapshot (ไม่ส่ง = ใช้ VM ปัจจุบันของอาจารย์) |
 | `ami_id` | ❌ | ใช้ AMI ที่มีอยู่แล้ว (ไม่ทำ Snapshot, สถานะ `available` ทันที) |
 
-ถ้าไม่ส่ง `ami_id` ระบบ export โปรเจ็ค GNS3 (`.gns3project`) จาก VM ไปยัง private S3 bucket แบบ background และตั้งสถานะ `pending` ก่อนเปลี่ยนเป็น `available` หรือ `failed` (ตรวจ `status_detail` เมื่อ export ล้มเหลว). ระบุ `instance_id` เพื่อเลือก VM และ `project_id` หากมีหลายโปรเจ็ค; ถ้าไม่ระบุจะใช้ VM/โปรเจ็คเดียวที่มี. ต้อง stop node ทุกตัวในโปรเจ็คก่อน export. การทำงานนี้ต้องตั้ง `SNAPSHOTS_BUCKET` ใน `.env`; ถ้าไม่ตั้งจะได้ `500`. หากส่ง `ami_id` ที่มีอยู่แล้วจะผูกกับ AMI โดยตรงและไม่ export.
+ถ้าไม่ส่ง `ami_id` ระบบ export โปรเจ็ค GNS3 (`.gns3project`) จาก VM ไปยัง private S3 bucket แบบ background และตั้งสถานะ `pending` ก่อนเปลี่ยนเป็น `available` หรือ `failed` (ตรวจ `status_detail` เมื่อ export ล้มเหลว). ระบุ `instance_id` เพื่อเลือก VM และ `project_id` หากมีหลายโปรเจ็ค (ดู `project_id` ได้จาก `GET /instances/{id}/gns3/projects`); ถ้าไม่ระบุจะใช้ VM/โปรเจ็คเดียวที่มี. ถ้าต้อง export หลายโปรเจ็คพร้อมกัน ใช้ `POST /exercises/export-projects`. ต้อง stop node ทุกตัวในโปรเจ็คก่อน export. การทำงานนี้ต้องตั้ง `SNAPSHOTS_BUCKET` ใน `.env`; ถ้าไม่ตั้งจะได้ `500`. หากส่ง `ami_id` ที่มีอยู่แล้วจะผูกกับ AMI โดยตรงและไม่ export.
 **Response `201`**: Exercise object (`"status": "pending"`)
 **Error:** `400` ไม่มี VM / มีหลาย VM แต่ไม่ระบุ `instance_id` | `403` ไม่ใช่ Instructor หรือ VM ไม่ใช่ของตัวเอง
+
+##### `POST /exercises/export-projects`
+สิทธิ์: **Instructor เท่านั้น** Export หลายโปรเจ็คจาก GNS3 บน VM ในครั้งเดียว (ไม่รองรับ `ami_id`)
+
+**Request (export ทุกโปรเจ็ค)**
+```json
+{
+  "title": "Lab Week 3",
+  "description": "ชุดแล็บสัปดาห์ที่ 3",
+  "instance_id": "i-0123456789abcdef0",
+  "export_all": true
+}
+```
+**Request (เลือกบางโปรเจ็ค)**
+```json
+{
+  "title": "Lab Week 3",
+  "description": "ชุดแล็บสัปดาห์ที่ 3",
+  "instance_id": "i-0123456789abcdef0",
+  "project_ids": ["project-uuid-1", "project-uuid-2"]
+}
+```
+| ฟิลด์ | จำเป็น | คำอธิบาย |
+| :--- | :---: | :--- |
+| `title`, `description` | ✅ | ใช้ร่วมกัน ชื่อแบบฝึกหัดแต่ละอันจะเป็น `"<title> - <ชื่อโปรเจ็ค>"` |
+| `instance_id` | ❌ | VM ที่จะ export (ไม่ส่ง = ใช้ VM ปัจจุบัน/VM เดียวของอาจารย์) |
+| `export_all` | ❌ | `true` = export ทุกโปรเจ็คบน VM |
+| `project_ids` | ❌ | รายการ `project_id` ที่เลือก (ไม่ต้องส่งถ้าใช้ `export_all`) |
+
+- ต้องส่ง `export_all=true` หรือ `project_ids` อย่างใดอย่างหนึ่ง ไม่เช่นนั้นได้ `400`
+- 1 โปรเจ็ค = 1 แบบฝึกหัด มี `exercise_id`, ไฟล์ S3 และ `status` ของตัวเอง (`pending` → `available` | `failed`) ถ้าบางโปรเจ็ค export ไม่ผ่าน (เช่น ยังมี node รันอยู่) จะเป็น `failed` เฉพาะโปรเจ็คนั้น ไม่กระทบอันอื่น (ดู `status_detail`)
+- background task export ทีละโปรเจ็คตามลำดับ ใช้ `GET /exercises/{id}` ดูสถานะ
+- ต้อง stop node ทุกตัวในแต่ละโปรเจ็คก่อน export และต้องตั้ง `SNAPSHOTS_BUCKET`
+
+**Response `201`**
+```json
+{
+  "count": 2,
+  "exercises": [
+    { "...": "Exercise object (status: pending)" },
+    { "...": "Exercise object (status: pending)" }
+  ]
+}
+```
+**Error:** `400` ไม่ระบุ `export_all`/`project_ids`, ไม่พบโปรเจ็คที่ระบุ (บอกรายการ id ที่ไม่พบ) หรือไม่มีโปรเจ็คบน VM | `403` ไม่ใช่ Instructor หรือ VM ไม่ใช่ของตัวเอง | `404` ไม่พบ instance | `500` ไม่ได้ตั้ง `SNAPSHOTS_BUCKET` | `502` เชื่อมต่อ GNS3 บน VM ไม่ได้
 
 ##### `DELETE /exercises/{id}`
 สิทธิ์: Instructor ทุกคน (ลบแบบฝึกหัดของอาจารย์ท่านอื่นได้) หรือ Admin / Student ได้ `403`
@@ -579,6 +627,21 @@ Sync สถานะและ IP จาก EC2 ทุกครั้งที่
   "instances": [ { "...": "Instance object" } ]
 }
 ```
+
+##### `GET /instances/{id}/gns3/projects`
+สิทธิ์: Instructor / Admin (Instructor ต้องเป็นเจ้าของ VM) ดูรายชื่อโปรเจ็คทั้งหมดที่มีใน GNS3 บน VM นั้น (VM ต้อง `running` และ backend ต้องเข้าถึง port 3080 ได้) ใช้ดู `project_id` ก่อนเลือก export
+**Response `200`**
+```json
+{
+  "instance_id": "i-0123456789abcdef0",
+  "count": 2,
+  "projects": [
+    { "project_id": "project-uuid-1", "name": "Lab 1: Basic OSPF Routing", "status": "closed" },
+    { "project_id": "project-uuid-2", "name": "Lab 2: BGP Configuration", "status": "opened" }
+  ]
+}
+```
+**Error:** `400` VM ไม่มีรหัสผ่าน GNS3 ในระบบ | `403` ไม่ใช่ VM ของตัวเอง | `404` ไม่พบ instance | `502` เชื่อมต่อ GNS3 บน VM ไม่ได้ หรือ GNS3 ปฏิเสธรหัสผ่าน
 
 ##### `POST /instances/{id}/start`
 เปิดเครื่องที่ Stop ไว้ รอจนเครื่อง `running` (สูงสุดประมาณ 2 นาที) เพื่อให้ได้ Public IP ใหม่
