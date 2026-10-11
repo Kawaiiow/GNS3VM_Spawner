@@ -31,7 +31,7 @@ FastAPI backend สำหรับระบบ **NetLab** ให้นักศ�
      | บทบาท | สิทธิ์สร้าง VM |
      |---|---|
      | `student` | **Sandbox 1 เครื่อง + Exercise 1 เครื่อง** (ล็อกแยกกัน) |
-     | `instructor` | ไม่จำกัดจำนวน |
+     | `instructor` | **Sandbox 1 เครื่อง** (ล็อกเหมือนนักศึกษา) + Exercise ไม่จำกัดจำนวน |
      | `admin` | สร้าง VM ไม่ได้ (ดู Dashboard / จัดการผู้ใช้เท่านั้น) |
    - จำกัดจำนวน VM ของทั้งโปรเจกต์ด้วย `MAX_CONCURRENT_INSTANCES`
    - **รหัสผ่าน GNS3 แยกต่อ VM**: ตอน launch ระบบสุ่มรหัสผ่านใหม่ใส่ผ่าน EC2 UserData แล้วเก็บใน DynamoDB ส่งให้เจ้าของ VM เท่านั้น (Admin ไม่เห็น)
@@ -67,8 +67,8 @@ erDiagram
         string password_hash "Bcrypt hash"
         string full_name
         string role "student | instructor | admin"
-        string active_instance_id "Nullable - ล็อก Sandbox VM"
-        string active_exercise_instance_id "Nullable - ล็อก Exercise VM"
+        string active_instance_id "Nullable - ล็อก Sandbox VM (student/instructor)"
+        string active_exercise_instance_id "Nullable - ล็อก Exercise VM (student เท่านั้น)"
         string created_at "ISO-8601"
         string updated_at "ISO-8601"
     }
@@ -336,7 +336,7 @@ aws ec2 describe-instances --filters "Name=tag:Name,Values=netlab-gns3-ami-build
 | `POST` | `/exercises` | Instructor | สร้างแบบฝึกหัด |
 | `POST` | `/exercises/export-projects` | Instructor | Export หลายโปรเจ็ค (เลือกบางอัน หรือ `export_all`) เป็นแบบฝึกหัดหลายอัน |
 | `DELETE` | `/exercises/{id}` | Instructor / Admin | ลบแบบฝึกหัด (พร้อมลบ VM ของแบบฝึกหัดนั้นทั้งหมด) |
-| `POST` | `/instances` | Student / Instructor | สร้าง GNS3 VM |
+| `POST` | `/instances` | Student / Instructor | สร้าง GNS3 VM (Sandbox 1 เครื่องต่อคน) |
 | `GET` | `/instances` | User | ดูรายการ VM |
 | `GET` | `/instances/{id}/gns3/projects` | Instructor / Admin (เจ้าของ VM) | ดูรายชื่อโปรเจ็คที่มีใน GNS3 บน VM |
 | `POST` | `/instances/{id}/start` | เจ้าของ / Admin | เปิดเครื่อง |
@@ -360,7 +360,7 @@ Token เป็น JWT (HS256) อายุ 24 ชั่วโมง ส่ง T
 
 **บทบาทและโควตา VM**
 - `student`: Sandbox 1 เครื่อง + Exercise 1 เครื่อง
-- `instructor`: ไม่จำกัด
+- `instructor`: Sandbox 1 เครื่อง (Exercise VM ไม่จำกัด)
 - `admin`: สร้าง VM ไม่ได้
 
 ---
@@ -484,6 +484,11 @@ Token เป็น JWT (HS256) อายุ 24 ชั่วโมง ส่ง T
 
 ##### `GET /auth/me`
 **Response `200`**: User object (`active_instance_id` และ `active_exercise_instance_id` เป็นค่าล่าสุด)
+
+- `active_instance_id` = Sandbox VM ที่ถืออยู่ (**student และ instructor**) เป็น `i-xxxx` เมื่อมี VM, `"PENDING_LAUNCH"` ระหว่างกำลังสร้าง, `null` เมื่อไม่มี
+- `active_exercise_instance_id` = Exercise VM (เฉพาะ student; instructor เป็น `null` เสมอ)
+- ค่าเป็น **ID เท่านั้น** ไม่มีสถานะ ถ้าต้องการ `state` / `public_ip` ให้เรียก `GET /instances`
+- Stop ไม่ปล่อยช่อง (ยังนับโควตา) ปล่อยเฉพาะตอน Terminate
 
 ---
 

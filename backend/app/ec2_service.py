@@ -224,7 +224,7 @@ def launch_instance(
 
     # 1. Atomic reservation in DynamoDB (เฉพาะ student) แยกช่อง Sandbox / Exercise
     slot = EXERCISE_SLOT if exercise_id else SANDBOX_SLOT
-    limited = (role or "student") == "student"
+    limited = is_slot_limited(role, slot)
     if limited:
         reserve_user_vm_slot(user_id, slot)
 
@@ -479,6 +479,21 @@ def stop_instance(instance_id: str) -> dict:
         "public_ip": None,
         "message": "instance กำลังปิดเครื่อง",
     }
+
+
+def is_slot_limited(role: Optional[str], slot: str) -> bool:
+    """
+    ช่องล็อกนี้บังคับโควตากับ role นี้หรือไม่
+    - student: จำกัด Sandbox 1 + Exercise 1
+    - instructor: จำกัด Sandbox 1 เครื่อง (Exercise ไม่จำกัด)
+    - admin: สร้าง VM ไม่ได้อยู่แล้ว
+    """
+    role = role or "student"
+    if role == "student":
+        return True
+    if role == "instructor":
+        return slot == SANDBOX_SLOT
+    return False
 
 
 def terminate_instance(instance_id: str) -> dict:

@@ -181,7 +181,10 @@ def _resolve_export_instance(instance_id: Optional[str], current_user: UserInDB)
             detail="ยังไม่ได้ตั้งค่า SNAPSHOTS_BUCKET ใน .env",
         )
 
-    target_instance_id = instance_id or current_user.active_instance_id
+    active = current_user.active_instance_id
+    if active == "PENDING_LAUNCH":
+        active = None
+    target_instance_id = instance_id or active
     if not target_instance_id:
         # Instructor ไม่จำกัดจำนวน VM: ถ้าไม่ระบุ instance_id จะใช้เครื่องที่มีอยู่เครื่องเดียว
         live = list_instances_by_user(current_user.user_id)
