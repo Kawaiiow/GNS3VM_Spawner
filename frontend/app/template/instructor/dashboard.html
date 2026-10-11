@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    {% include "component/head.html" %}
+    <title>แดชบอร์ด - NetLab</title>
+</head>
+<body class="bg-white">
+    {% include "component/navbar.html" %}
+    <div class="max-w-6xl min-h-screen mx-auto px-6 py-28">
+        {% set sb = user.instances | selectattr("exercise_id", "none") | first %}
+        {% set ex = user.instances | rejectattr("exercise_id", "none") | first %}
+        <p class="text-gray-800 text-4xl">ยินดีต้อนรับ, {{ request.cookies.get("username", "Instructor") }}</p>
+        <p class="text-gray-600 text-xl mb-12">จัดการแบบฝึกหัดและติดตามความก้าวหน้าของผู้เรียน</p>
+        <p class="text-gray-800 text-2xl">เครื่องของฉัน</p>
+        <p class="text-gray-600 text-base mb-4">ทดลองในเครื่อง Sandbox หรือใช้เครื่องที่เตรียมไว้ให้ตามแบบฝึกหัด</p>
+        <div class="grid gap-6 md:grid-cols-2 mb-12">
+            <div class="rounded-lg border shadow-sm p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-800 text-lg">Sandbox</p>
+                        <p class="text-gray-600 text-sm">เครื่องเปล่าสำหรับทดลองด้วยตัวเอง</p>
+                    </div>
+                    {% if not sb %}
+                    <form action="/instructor/instance/create" method="POST">
+                        <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 transition-colors duration-200 ease-in-out text-white px-4 py-3 rounded-xl text-sm">เพิ่ม</button>
+                    </form>
+                    {% elif sb.state not in ["running", "stopped"] %}
+                    <p class="bg-gray-600 text-gray-200 px-4 py-3 rounded-xl text-sm">รอ...</p>
+                    {% endif %}
+                </div>
+                {% if sb and sb.state in ["running", "stopped"] %}
+                <div class="text-gray-600 text-sm my-4">
+                    <hr class="mb-4">
+                    <p class="text-gray-600 text-sm">ชื่อ Sandbox</p>
+                    <p class="text-gray-800 text-lg">{{ sb.name }}</p>
+                    <p class="text-gray-600 text-sm">สถานะ</p>
+                    <p class="text-gray-800 text-lg">{{ sb.state }}</p>
+                    <p class="text-gray-600 text-sm">Public IP</p>
+                    <p class="text-gray-800 text-lg">{{ sb.public_ip or "-" }}</p>
+                    <p class="text-gray-600 text-sm">ชื่อผู้ใช้ GNS3</p>
+                    <p class="text-gray-800 text-lg">{{ sb.gns3_user }}</p>
+                    <p class="text-gray-600 text-sm">รหัสผ่าน GNS3</p>
+                    <p class="text-gray-800 text-lg">{{ sb.gns3_password }}</p>
+                </div>
+                <div class="flex gap-2">
+                    <form action="/instructor/instance/{{ 'stop' if sb.state == 'running' else 'start' }}/{{ sb.instance_id }}" method="POST" class="w-full">
+                        {% if sb.state == "running" %}
+                        <button type="submit" class="w-full text-xs px-3 py-2 bg-amber-500 hover:bg-yellow-600 transition-colors duration-200 ease-in-out rounded-xl text-white">หยุด</button>
+                        {% else %}
+                        <button type="submit" class="w-full text-xs px-3 py-2 bg-emerald-600 hover:bg-emerald-700 transition-colors duration-200 ease-in-out rounded-xl text-white">เริ่ม</button>
+                        {% endif %}
+                    </form>
+                    <form action="/instructor/instance/delete/{{ sb.instance_id }}" method="POST" class="w-full">
+                        <button type="submit" class="w-full text-xs px-3 py-2 bg-rose-600 hover:bg-rose-700 transition-colors duration-200 ease-in-out rounded-xl text-white">ลบ</button>
+                    </form>
+                </div>
+                {% endif %}
+            </div>
+            <div class="rounded-lg border shadow-sm p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-800 text-lg">แบบฝึกหัด</p>
+                        <p class="text-gray-600 text-sm">เครื่องที่เตรียมโจทย์ไว้ให้</p>
+                    </div>
+                    {% if ex and ex.state not in ["running", "stopped"] %}
+                    <p class="bg-gray-600 text-gray-200 px-4 py-3 rounded-xl text-sm">รอ...</p>
+                    {% endif %}
+                </div>
+                {% if ex and ex.state in ["running", "stopped"] %}
+                <div class="text-gray-600 text-sm my-4">
+                    <hr class="mb-4">
+                    <p class="text-gray-600 text-sm">ชื่อแบบฝึกหัด</p>
+                    <p class="text-gray-800 text-lg">{{ ex.name }}</p>
+                    <p class="text-gray-600 text-sm">สถานะ</p>
+                    <p class="text-gray-800 text-lg">{{ ex.state }}</p>
+                    <p class="text-gray-600 text-sm">Public IP</p>
+                    <p class="text-gray-800 text-lg">{{ ex.public_ip or "-" }}</p>
+                    <p class="text-gray-600 text-sm">ชื่อผู้ใช้ GNS3</p>
+                    <p class="text-gray-800 text-lg">{{ ex.gns3_user }}</p>
+                    <p class="text-gray-600 text-sm">รหัสผ่าน GNS3</p>
+                    <p class="text-gray-800 text-lg">{{ ex.gns3_password }}</p>
+                </div>
+                <div class="flex gap-2">
+                    <form action="/instructor/instance/{{ 'stop' if ex.state == 'running' else 'start' }}/{{ ex.instance_id }}" method="POST" class="w-full">
+                        {% if ex.state == "running" %}
+                        <button type="submit" class="w-full text-xs px-3 py-2 bg-amber-500 hover:bg-yellow-600 transition-colors duration-200 ease-in-out rounded-xl text-white">หยุด</button>
+                        {% else %}
+                        <button type="submit" class="w-full text-xs px-3 py-2 bg-emerald-600 hover:bg-emerald-700 transition-colors duration-200 ease-in-out rounded-xl text-white">เริ่ม</button>
+                        {% endif %}
+                    </form>
+                    <form action="/instructor/instance/delete/{{ ex.instance_id }}" method="POST" class="w-full">
+                        <button type="submit" class="w-full text-xs px-3 py-2 bg-rose-600 hover:bg-rose-700 transition-colors duration-200 ease-in-out rounded-xl text-white">ลบ</button>
+                    </form>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        <div class="flex items-center justify-between mb-4">
+            <div>
+                <p class="text-gray-800 text-2xl">แบบฝึกหัดที่เปิดให้ทำ</p>
+                <p class="text-gray-600 text-base">เลือกแบบฝึกหัดเพื่อสร้างเครื่องพร้อมแบบฝึกหัดนั้น</p>
+            </div>
+            {% if sb and sb.state == "running" %}
+            <form id="save" action="/instructor/exercise/create" method="POST">
+                <input type="hidden" name="instance_id" value="{{ sb.instance_id }}">
+                <button type="submit" class="bg-gray-800 hover:bg-gray-900 transition-colors duration-200 ease-in-out text-white px-4 py-3 rounded-xl text-sm">เพิ่ม</button>
+            </form>
+            {% endif %}
+        </div>
+        {% if sb and sb.state == "running" %}
+        <div class="flex gap-2 mb-4">
+            <input form="save" type="text" name="title" placeholder="หัวข้อ" required class="w-full bg-white border rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-600">
+            <input form="save" type="text" name="description" placeholder="คำอธิบาย" required class="w-full bg-white border rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-600">
+        </div>
+        {% endif %}
+        <div class="bg-white border rounded-lg overflow-x-auto shadow-sm">
+            <table class="min-w-lg w-full">
+                <tr class="text-xs text-gray-600 tracking-wide">
+                    <th class="px-4 py-3 text-left">หัวข้อ</th>
+                    <th class="px-4 py-3 text-left">คำอธิบาย</th>
+                    <th class="px-4 py-3 text-right">การจัดการ</th>
+                </tr>
+                {% for exercise in exercises %}
+                <tr class="border-t">
+                    <td class="px-4 py-3 text-left text-gray-800 whitespace-nowrap">{{ exercise.title }}</td>
+                    <td class="px-4 py-3 text-left text-gray-800 whitespace-nowrap">{{ exercise.description }}</td>
+                    <td class="px-4 py-3 text-right">
+                        <div class="flex justify-end gap-2">
+                            {% if exercise.status != "failed" and not ex %}
+                            <form action="/instructor/instance/create" method="POST" class="inline">
+                                <input type="hidden" name="exercise_id" value="{{ exercise.exercise_id }}">
+                                <button type="submit" class="text-xs px-3 py-2 bg-emerald-600 hover:bg-emerald-700 transition-colors duration-200 ease-in-out rounded-xl text-white">ทำ</button>
+                            </form>
+                            {% endif %}
+                            <form action="/instructor/exercise/delete/{{ exercise.exercise_id }}" method="POST" class="inline">
+                                <button type="submit" class="text-xs px-3 py-2 bg-rose-600 hover:bg-rose-700 transition-colors duration-200 ease-in-out rounded-xl text-white">ลบ</button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+    </div>
+    {% include "component/footer.html" %}
+</body>
+</html>

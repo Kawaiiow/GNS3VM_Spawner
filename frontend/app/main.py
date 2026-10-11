@@ -2,9 +2,8 @@ from fastapi import FastAPI, Request, Form, status
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import RedirectResponse
-from router import admin
-import uvicorn, httpx
-import os
+from router import instructor, admin
+import uvicorn, httpx, os
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
@@ -56,6 +55,7 @@ def render_profile(request: Request):
         return template.TemplateResponse(request=request, name="503.html", status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
     return template.TemplateResponse(request=request, name="profile.html", context={"user": response.json()})
 
+app.include_router(instructor.router, prefix="/instructor")
 app.include_router(admin.router, prefix="/admin")
 
 @app.post("/signout")
