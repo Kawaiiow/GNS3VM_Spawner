@@ -118,11 +118,11 @@ def _build_gns3_user_data(user: str, password: str) -> str:
         .replace("__SERVICE__", settings.gns3_service_name)
     )
 
-# ต่อท้าย UserData ของ VM แบบฝึกหัด: ดาวน์โหลดไฟล์ .gns3project จาก S3 (presigned URL)
+# ต่อท้าย UserData ของ VM แบบฝึกหัด: ดาวน์โหลดไฟล์ .gns3project จาก S3 (presigned URL) ทีละโปรเจ็ค
 # แล้ว import เข้า GNS3 ผ่าน REST API ของเครื่องตัวเอง (first boot เท่านั้น)
-# log อยู่ที่ /var/log/netlab-import.log
+# โปรเจ็คใดโหลด/import ไม่สำเร็จจะข้ามไปโปรเจ็คถัดไป  log อยู่ที่ /var/log/netlab-import.log
 _GNS3_IMPORT_USER_DATA_TEMPLATE = r"""
-# NetLab: import exercise project from S3
+# NetLab: import exercise projects from S3
 exec >>/var/log/netlab-import.log 2>&1
 AUTH="__USER__:__PASSWORD__"
 API="http://127.0.0.1:__PORT__/v2"
@@ -131,25 +131,60 @@ for i in $(seq 1 150); do
   [ "$code" = "200" ] && break
   sleep 2
 done
-curl -fsSL -o /tmp/exercise.gns3project "__URL__" || { echo "download failed"; exit 1; }
-PID=$(cat /proc/sys/kernel/random/uuid)
-curl -fsS -u "$AUTH" -X POST -H "Content-Type: application/octet-stream" \
-  --data-binary @/tmp/exercise.gns3project \
-  "$API/projects/$PID/import?name=__NAME__" && echo "import ok"
+__IMPORTS__
+"""
+
+_GNS3_IMPORT_ONE_TEMPLATE = r"""
+if curl -fsSL -o /tmp/exercise.gns3project "__URL__"; then
+  PID=$(cat /proc/sys/kernel/random/uuid)
+  if curl -fsS -u "$AUTH" -X POST -H "Content-Type: application/octet-stream" \
+    --data-binary @/tmp/exercise.gns3project \
+    "$API/projects/$PID/import?name=__NAME__"; then echo "import ok: __NAME__"; else echo "import FAILED: __NAME__"; fi
+else
+  echo "download FAILED: __NAME__"
+fi
 rm -f /tmp/exercise.gns3project
 """
 
-def _build_import_user_data(user: str, password: str, s3_key: str, title: Optional[str]) -> str:
+# EC2 จำกัด UserData ไม่เกิน 16 KB (presigned URL แต่ละอันยาวราว 1-2 KB)
+MAX_USER_DATA_BYTES = 16000
+
+
+def _safe_project_name(name: Optional[str]) -> str:
+    name = "".join(c for c in (name or "") if c.isalnum() or c in ("-", "_")).strip()
+    return quote(name[:40] or "exercise", safe="")
+
+
+def _exercise_s3_keys(exercise: dict) -> list[str]:
+    """รายการ S3 key ของไฟล์ .gns3project (แบบใหม่ s3_keys / แบบเก่า s3_key เดี่ยว)"""
+    keys = [k for k in (exercise.get("s3_keys") or []) if k]
+    if not keys and exercise.get("s3_key"):
+        keys = [exercise["s3_key"]]
+    return keys
+
+
+def _build_import_user_data(
+    user: str,
+    password: str,
+    s3_keys: list[str],
+    names: Optional[list[str]] = None,
+    fallback_title: Optional[str] = None,
+) -> str:
+    """names = ชื่อโปรเจ็คเรียงตาม s3_keys (ถ้าไม่มีใช้ fallback_title)"""
     settings = get_settings()
-    url = s3_service.presign_get(s3_key)
-    name = "".join(c for c in (title or "") if c.isalnum() or c in ("-", "_")).strip()
-    name = quote(name[:40] or "exercise", safe="")
+    blocks = []
+    for idx, key in enumerate(s3_keys):
+        label = names[idx] if names and idx < len(names) else fallback_title
+        blocks.append(
+            _GNS3_IMPORT_ONE_TEMPLATE.replace("__URL__", s3_service.presign_get(key)).replace(
+                "__NAME__", _safe_project_name(label)
+            )
+        )
     return (
         _GNS3_IMPORT_USER_DATA_TEMPLATE.replace("__USER__", user)
         .replace("__PASSWORD__", password)
         .replace("__PORT__", str(settings.gns3_api_port))
-        .replace("__URL__", url)
-        .replace("__NAME__", name)
+        .replace("__IMPORTS__", "".join(blocks))
     )
 
 def _count_active_project_instances(client) -> int:
@@ -231,7 +266,8 @@ def launch_instance(
 
     # ตรวจสอบ exercise_id (ถ้ามีส่งมา)
     resolved_ami = ami_id
-    exercise_s3_key: Optional[str] = None
+    exercise_s3_keys: list[str] = []
+    exercise_project_names: list[str] = []
     exercise_title: Optional[str] = None
 
     if exercise_id:
@@ -242,11 +278,11 @@ def launch_instance(
                 detail=f"Exercise '{exercise_id}' not found or inactive.",
             )
         template_ami = exercise.get("ami_id")
-        s3_key = exercise.get("s3_key")
+        s3_keys = _exercise_s3_keys(exercise)
         if template_ami:
             # ต้นแบบ VM (AMI ที่สำรองไว้ใน S3): เช็คว่า AMI ยังอยู่/พร้อมใช้ ถ้าหายไปจะสั่งกู้คืนจาก S3
             _ensure_template_ready(exercise_id, exercise)
-            exercise_s3_key = None  # ไม่ต้อง import โปรเจ็คตอน boot เพราะโปรเจ็คอยู่ใน image ครบแล้ว
+            exercise_s3_keys = []  # ไม่ต้อง import โปรเจ็คตอน boot เพราะโปรเจ็คอยู่ใน image ครบแล้ว
         else:
             # แบบเก่า: ไฟล์ .gns3project เดี่ยวบน S3 (launch base AMI แล้ว import ตอน first boot)
             ex_status = exercise.get("status", "available")
@@ -258,17 +294,19 @@ def launch_instance(
                         f"(สถานะ: {ex_status}) กรุณารอสักครู่แล้วลองใหม่"
                     ),
                 )
-            if not s3_key:
+            if not s3_keys:
                 raise HTTPException(
                     status_code=400,
                     detail="แบบฝึกหัดนี้ไม่มีทั้งต้นแบบ VM (AMI) และไฟล์บน S3 (ข้อมูลไม่สมบูรณ์)",
                 )
-            if not s3_service.object_exists(s3_key):
-                raise HTTPException(
-                    status_code=400,
-                    detail="ไม่พบไฟล์ของแบบฝึกหัดนี้บน S3 กรุณาแจ้งอาจารย์ให้สร้างแบบฝึกหัดใหม่",
-                )
-            exercise_s3_key = s3_key
+            for key in s3_keys:
+                if not s3_service.object_exists(key):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="ไม่พบไฟล์ของแบบฝึกหัดนี้บน S3 กรุณาแจ้งอาจารย์ให้สร้างแบบฝึกหัดใหม่",
+                    )
+            exercise_s3_keys = s3_keys
+            exercise_project_names = list(exercise.get("project_names") or [])
             if not settings.gns3_set_vm_password:
                 raise HTTPException(
                     status_code=500,
@@ -329,16 +367,26 @@ def launch_instance(
         gns3_user = settings.gns3_vm_user
         gns3_password = _generate_vm_password()
         user_data = _build_gns3_user_data(gns3_user, gns3_password)
-        if exercise_s3_key:
+        if exercise_s3_keys:
             try:
                 user_data += _build_import_user_data(
-                    gns3_user, gns3_password, exercise_s3_key, exercise_title
+                    gns3_user,
+                    gns3_password,
+                    exercise_s3_keys,
+                    names=exercise_project_names,
+                    fallback_title=exercise_title,
                 )
             except Exception as e:
                 _rollback()
                 raise HTTPException(
                     status_code=500, detail=f"สร้าง presigned URL ของแบบฝึกหัดไม่สำเร็จ: {e}"
                 ) from e
+            if len(user_data.encode("utf-8")) > MAX_USER_DATA_BYTES:
+                _rollback()
+                raise HTTPException(
+                    status_code=400,
+                    detail="แบบฝึกหัดนี้มีโปรเจ็คมากเกินกว่าที่ UserData (16 KB) รองรับ กรุณาแจ้งอาจารย์ให้แยกเป็นหลายแบบฝึกหัด",
+                )
         run_instances_kwargs["UserData"] = user_data
 
     now_iso = datetime.now(timezone.utc).isoformat()

@@ -278,6 +278,14 @@ def create_exercise(
         )
         return ExerciseResponse(**item)
 
+    settings = get_settings()
+    use_project_files = settings.exercise_template_mode == "gns3project"
+    if use_project_files and not settings.snapshots_bucket:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="โหมด gns3project ต้องตั้งค่า SNAPSHOTS_BUCKET ใน .env",
+        )
+
     instance_rec = _resolve_export_instance(payload.instance_id, current_user)
 
     # ตรวจสอบเบื้องต้นแบบ synchronous (VM เปิดอยู่, รหัสผ่านถูก, เลือกโปรเจ็คได้) แล้วค่อยทำต้นแบบเบื้องหลัง
@@ -305,6 +313,12 @@ def create_exercise(
         status="pending",
         is_active=True,
     )
+    if use_project_files:
+        # export แต่ละโปรเจ็คเป็น .gns3project -> S3 (ทุกโปรเจ็คถ้าไม่ได้เลือก)
+        background_tasks.add_task(
+            exercise_service.build_exercise_export, exercise_id, instance_rec, selected
+        )
+        return ExerciseResponse(**item)
     background_tasks.add_task(
         exercise_service.build_exercise_template,
         exercise_id,
@@ -358,8 +372,11 @@ def delete_exercise(
     if ami_id and ami_id != get_settings().default_ami_id:
         ec2_service.deregister_image(ami_id)
 
+    s3_keys = set(record.get("s3_keys") or [])
     if record.get("s3_key"):
-        s3_service.delete_object(record["s3_key"])
+        s3_keys.add(record["s3_key"])
+    for key in s3_keys:
+        s3_service.delete_object(key)
 
     delete_exercise_record(exercise_id)
     return {

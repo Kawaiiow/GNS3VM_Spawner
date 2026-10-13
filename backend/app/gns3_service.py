@@ -7,6 +7,7 @@ gns3_service.py
 """
 
 import time
+import zipfile
 from typing import Optional
 
 import httpx
@@ -105,6 +106,40 @@ def select_projects(
 
     # คงลำดับเดียวกับที่ GNS3 ส่งมา
     return [p for p in projects if p["project_id"] in chosen]
+
+
+def export_project_to_file(instance_rec: dict, project_id: str, dest_path: str) -> None:
+    """
+    export โปรเจ็คจาก GNS3 ของ VM อาจารย์ (GET /v2/projects/{id}/export) เขียนลงไฟล์ .gns3project (zip)
+    - stream ลงดิสก์ ไม่โหลดทั้งไฟล์เข้า RAM
+    - ถ้า GNS3 ปฏิเสธ (เช่น node ยังรันอยู่) จะ raise พร้อมข้อความจาก GNS3
+    """
+    settings = get_settings()
+    base, auth = _find_base(instance_rec)
+    params = {
+        "include_snapshots": str(settings.gns3_export_include_snapshots).lower(),
+        "include_images": str(settings.gns3_export_include_images).lower(),
+        "reset_mac_addresses": "true",
+        "compression": "zip",
+    }
+    timeout = httpx.Timeout(
+        connect=10.0, read=float(settings.gns3_export_timeout), write=60.0, pool=10.0
+    )
+    try:
+        with httpx.stream(
+            "GET", f"{base}/projects/{project_id}/export", params=params, auth=auth, timeout=timeout
+        ) as r:
+            if r.status_code != 200:
+                body = r.read().decode("utf-8", errors="replace")[:300]
+                raise RuntimeError(f"GNS3 export ไม่สำเร็จ (HTTP {r.status_code}): {body}")
+            with open(dest_path, "wb") as f:
+                for chunk in r.iter_bytes(1024 * 1024):
+                    f.write(chunk)
+    except httpx.HTTPError as e:
+        raise RuntimeError(f"รับไฟล์ export จาก GNS3 ไม่สำเร็จ: {e}") from e
+
+    if not zipfile.is_zipfile(dest_path):
+        raise RuntimeError("ไฟล์ที่ export จาก GNS3 ไม่ใช่ไฟล์ zip ที่สมบูรณ์")
 
 
 def wait_until_ready(instance_rec: dict, timeout: int = 900, interval: int = 5) -> tuple[str, httpx.BasicAuth]:

@@ -40,9 +40,11 @@ def _bucket() -> str:
     return bucket
 
 
-def build_exercise_key(exercise_id: str) -> str:
+def build_exercise_key(exercise_id: str, project_id: Optional[str] = None) -> str:
+    """key ของไฟล์ .gns3project (หนึ่งไฟล์ต่อหนึ่งโปรเจ็ค ถ้าระบุ project_id)"""
     prefix = get_settings().snapshots_prefix.strip("/")
-    return f"{prefix}/{exercise_id}.gns3project" if prefix else f"{exercise_id}.gns3project"
+    name = f"{exercise_id}/{project_id}.gns3project" if project_id else f"{exercise_id}.gns3project"
+    return f"{prefix}/{name}" if prefix else name
 
 
 def object_exists(key: str) -> bool:
@@ -57,6 +59,13 @@ def object_exists(key: str) -> bool:
 def upload_fileobj(fileobj: BinaryIO, key: str) -> None:
     get_s3_client().upload_fileobj(
         fileobj, _bucket(), key, ExtraArgs={"ContentType": "application/zip"}
+    )
+
+
+def upload_file(path: str, key: str) -> None:
+    """อัปโหลดไฟล์จากดิสก์ (multipart อัตโนมัติ เหมาะกับไฟล์ใหญ่)"""
+    get_s3_client().upload_file(
+        path, _bucket(), key, ExtraArgs={"ContentType": "application/zip"}
     )
 
 

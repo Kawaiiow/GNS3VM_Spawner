@@ -84,6 +84,15 @@ class Settings(BaseSettings):
     snapshots_bucket: Optional[str] = None
     snapshots_prefix: str = "exercises"
     snapshot_url_expires: int = 3600   # วินาที: อายุ presigned URL ที่ฝังใน UserData ตอน launch
+    # วิธีทำ "ต้นแบบ" ของแบบฝึกหัด
+    #   gns3project = export โปรเจ็คจาก GNS3 ของอาจารย์เป็นไฟล์ .gns3project เก็บใน S3
+    #                 แล้ว VM ใหม่ (Base AMI) จะ import ไฟล์ตอน first boot  (ต้องตั้ง SNAPSHOTS_BUCKET)
+    #   ami         = snapshot VM อาจารย์เป็น AMI (ใช้ไม่ได้ถ้า Lab บล็อก CreateStoreImageTask แค่ส่วนสำรอง S3)
+    exercise_template_mode: str = "gns3project"
+    # รวม image ของ node (IOS/QEMU) ลงในไฟล์ export ด้วยหรือไม่ (ไฟล์ใหญ่ขึ้น)
+    # เปิดเมื่อ image อยู่เฉพาะใน VM ของอาจารย์ ไม่ได้อยู่ใน Base AMI
+    gns3_export_include_images: bool = False
+    gns3_export_include_snapshots: bool = False
     # การคุย GNS3 REST API ของ VM อาจารย์ (ตอน export)
     gns3_api_port: int = 3080
     gns3_prefer_private_ip: bool = True   # backend อยู่ VPC เดียวกับ VM -> ลอง private IP ก่อน

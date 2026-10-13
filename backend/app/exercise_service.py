@@ -12,9 +12,11 @@ exercise_service.py
 ตอนสร้าง VM นักศึกษา: ใช้ AMI นี้ได้ทันที ถ้า AMI หายไปจะกู้คืนจาก S3 ให้อัตโนมัติ (ดู ec2_service._ensure_template_ready)
 """
 
+import os
+import tempfile
 from typing import Optional
 
-from app import ec2_service, gns3_service
+from app import ec2_service, gns3_service, s3_service
 from app.config import get_settings
 from app.dynamodb_service import update_exercise_fields, update_exercise_status
 
@@ -28,6 +30,47 @@ def _progress(exercise_id: str, text: str) -> None:
         update_exercise_status(exercise_id, "pending", detail=text)
     except Exception:  # noqa: BLE001 - อัปเดตความคืบหน้าพลาดไม่ควรทำให้งานล้ม
         pass
+
+
+def build_exercise_export(
+    exercise_id: str,
+    instance_rec: dict,
+    selected_projects: list[dict],
+) -> None:
+    """
+    ทำต้นแบบแบบ "ไฟล์โปรเจ็ค" (รันเบื้องหลังจาก POST /exercises เมื่อ EXERCISE_TEMPLATE_MODE=gns3project)
+      ต่อโปรเจ็ค: export จาก GNS3 ของอาจารย์ -> .gns3project -> อัปโหลดขึ้น S3
+      สำเร็จครบทุกโปรเจ็ค -> บันทึก s3_keys (เรียงตามโปรเจ็ค) แล้ว status = available
+      ล้มเหลวที่โปรเจ็คใด -> ลบไฟล์ที่อัปโหลดไปแล้ว แล้ว status = failed (ดูสาเหตุที่ status_detail)
+    VM นักศึกษาเปิดจาก Base AMI แล้ว import ไฟล์เหล่านี้ตอน first boot (ดู ec2_service.launch_instance)
+    """
+    uploaded: list[str] = []
+    total = len(selected_projects)
+    try:
+        with tempfile.TemporaryDirectory(prefix="netlab-export-") as tmp:
+            for idx, p in enumerate(selected_projects, start=1):
+                pid = p["project_id"]
+                pname = p.get("name") or pid
+                path = os.path.join(tmp, f"{pid}.gns3project")
+
+                _progress(exercise_id, f"{idx}/{total} กำลัง export โปรเจ็ค '{pname}' จาก GNS3")
+                gns3_service.export_project_to_file(instance_rec, pid, path)
+
+                _progress(exercise_id, f"{idx}/{total} กำลังอัปโหลด '{pname}' ขึ้น S3")
+                key = s3_service.build_exercise_key(exercise_id, pid)
+                s3_service.upload_file(path, key)
+                uploaded.append(key)
+                os.remove(path)  # ล้างดิสก์ของ backend ทีละไฟล์
+
+        update_exercise_fields(exercise_id, {"s3_keys": uploaded, "s3_key": uploaded[0]})
+        update_exercise_status(exercise_id, "available")
+    except Exception as e:  # noqa: BLE001 - ต้องจับทุกอย่างเพื่อไม่ให้ค้าง pending
+        for key in uploaded:
+            s3_service.delete_object(key)
+        try:
+            update_exercise_status(exercise_id, "failed", detail=_error_text(e))
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def build_exercise_template(
