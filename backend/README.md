@@ -8,6 +8,8 @@ FastAPI backend สำหรับระบบ **NetLab** ให้นักศ�
 
 - [ฟีเจอร์หลัก](#-ฟีเจอร์หลักของระบบ)
 - [โครงสร้างฐานข้อมูล](#️-โครงสร้างฐานข้อมูล-dynamodb-reduced-schema)
+- [กลไกต้นแบบแบบฝึกหัด (Template Modes)](#-กลไกต้นแบบแบบฝึกหัด-template-modes)
+- [โครงสร้างโปรเจกต์](#-โครงสร้างโปรเจกต์)
 - [คำแนะนำสำหรับ AWS Academy Learner Lab](#️-คำแนะนำสำหรับ-aws-academy-learner-lab)
 - [ส่วนที่ 0: Quick Start ด้วย Bootstrap Scripts (แนะนำ)](#ส่วนที่-0-quick-start-ด้วย-bootstrap-scripts-แนะนำ)
 - [ส่วนที่ 1: ติดตั้งและรัน Local Backend (ตั้งค่าเอง)](#ส่วนที่-1-การติดตั้งและรัน-local-backend-ตั้งค่าเอง)
@@ -24,7 +26,7 @@ FastAPI backend สำหรับระบบ **NetLab** ให้นักศ�
    - ลงชื่อเข้าใช้ด้วย Username หรือ Member ID พร้อมรหัสผ่านที่เข้ารหัสด้วย `bcrypt`
    - ออก **JWT (HS256)** รองรับทั้ง `Authorization: Bearer <token>` และ `HttpOnly Cookie` (ออกจากระบบด้วย `POST /auth/logout`)
    - แบ่งสิทธิ์: `student`, `instructor`, `admin`
-   - Admin จัดการผู้ใช้ผ่าน API ได้ครบ (สร้าง / ดูรายชื่อ / ดูรายบุคคล / แก้ไข / ลบ) มี Dashboard ภาพรวม และสั่ง Terminate VM ทั้งระบบได้ในครั้งเดียว (`POST /admin/instances/terminate-all`)
+   - Admin จัดการผู้ใช้ผ่าน API ได้ครบ (สร้าง / ดูรายชื่อ / ดูรายบุคคล / แก้ไข / ลบ) มี Dashboard ภาพรวม สั่ง Terminate VM ทั้งระบบได้ในครั้งเดียว (`POST /admin/instances/terminate-all`) และกวาด AMI ต้นแบบที่ระบบสร้างเองได้ (`POST /admin/images/delete-all`)
    - มีสคริปต์ CLI สำหรับสร้างบัญชี (`scripts/create_user.py`)
 2. **EC2 & VM Lifecycle with DynamoDB Persistence**
    - **โควตา VM ตามบทบาท** (ป้องกัน Race Condition ด้วย DynamoDB Conditional Write):
@@ -39,9 +41,12 @@ FastAPI backend สำหรับระบบ **NetLab** ให้นักศ�
    - Ownership Protection: Start / Stop / Terminate ได้เฉพาะ VM ของตัวเอง (Admin ทำได้ทุกเครื่อง)
    - คืนโควตาทันทีเมื่อ Terminate
 3. **Lab Exercises Management**
-   - Instructor สร้างแบบฝึกหัดได้ 2 แบบ: **Export โปรเจ็ค GNS3 จาก VM ของตัวเองเป็นไฟล์ `.gns3project` และเก็บใน private S3 bucket** (สถานะ `pending` → `available` หรือ `failed`) หรือระบุ `ami_id` ที่มีอยู่แล้ว
-   - Instructor **ดูรายชื่อโปรเจ็คทั้งหมดใน GNS3 ของ VM ตัวเอง** (`GET /instances/{id}/gns3/projects`) แล้วเลือก Export **เฉพาะบางโปรเจ็ค** หรือ **ทุกโปรเจ็ค** ได้ในครั้งเดียว (`POST /exercises/export-projects`) โดย 1 โปรเจ็ค = 1 แบบฝึกหัด และแต่ละอันมีสถานะของตัวเอง
-   - นักศึกษาเลือก `exercise_id` ตอนขอสร้าง VM เพื่อเริ่มจากโจทย์/Topology นั้นทันที เมื่อ S3 export สำเร็จ VM จะ import โปรเจ็คตอน first boot
+   - Instructor สร้างแบบฝึกหัดจาก VM ของตัวเองผ่าน `POST /exercises` โดยวิธีทำ "ต้นแบบ" ถูกกำหนดด้วย `EXERCISE_TEMPLATE_MODE`:
+     - **`gns3project` (ค่าเริ่มต้น)**: export โปรเจ็ค GNS3 เป็นไฟล์ `.gns3project` เก็บใน private S3 bucket แล้ว VM ของนักศึกษา (เปิดจาก Base AMI) จะ import ไฟล์ตอน first boot
+     - **`ami`**: snapshot VM ของอาจารย์เป็น AMI (ถ้าเลือกเฉพาะบางโปรเจ็คจะเปิด VM ชั่วคราวเพื่อลบโปรเจ็คที่ไม่เลือกก่อน) แล้วสำรอง AMI ลง S3 ถ้า AMI หายไประบบกู้คืนจาก S3 ให้เอง
+     - หรือระบุ `ami_id` ที่มีอยู่แล้วเพื่อผูกกับแบบฝึกหัดโดยตรง (ไม่ทำต้นแบบใหม่)
+   - Instructor **ดูรายชื่อโปรเจ็คใน GNS3 ของ VM ตัวเอง** (`GET /instances/{id}/gns3/projects`) แล้วเลือกได้ว่าจะให้ต้นแบบมี **เฉพาะบางโปรเจ็ค** (`project_ids` / `project_names`) หรือ **ทุกโปรเจ็ค** (ไม่ระบุอะไรเลย) โดย 1 แบบฝึกหัด = 1 ต้นแบบ ที่มีได้หลายโปรเจ็ค และมีสถานะของตัวเอง (`pending` → `available` | `failed`)
+   - นักศึกษาเลือก `exercise_id` ตอนขอสร้าง VM เพื่อเริ่มจากโจทย์/Topology นั้นทันที (แบบฝึกหัดต้อง `available`)
    - Instructor ทุกคนลบแบบฝึกหัดของกันและกันได้ (และ Admin) เมื่อลบ ระบบจะ **terminate VM ทุกเครื่องที่สร้างจากแบบฝึกหัดนั้น** (`exercise_id` เดียวกัน) พร้อมคืนโควตา แล้วจึง De-register AMI / ลบไฟล์บน S3 / ลบแถวใน DynamoDB ผู้ที่กำลังทำแล็บนั้นอยู่จะเสียงานที่ยังไม่ได้บันทึกทันที
    - ระบบไม่ De-register AMI หลัก (`DEFAULT_AMI_ID`) แม้มีคนสร้างแบบฝึกหัดโดยใส่ `ami_id` นั้น
 4. **Automated Provisioning & Verification**
@@ -92,21 +97,71 @@ erDiagram
     EXERCISES {
         string exercise_id PK "UUID"
         string instructor_id FK "GSI: InstructorIdIndex"
-        string ami_id "Nullable - existing AMI"
         string title
         string description
-        string s3_key "Nullable - exported .gns3project"
-        string project_name "Nullable - GNS3 project"
-        string status_detail "Nullable - export failure detail"
+        string ami_id "Nullable - โหมด ami / ผูก AMI เดิม"
+        string s3_key "Nullable - ไฟล์โปรเจ็คแรก (gns3project) หรือ AMI ที่สำรองไว้ (ami)"
+        list s3_keys "Nullable - .gns3project ทุกโปรเจ็ค (เรียงตาม project_names)"
+        string project_name "Nullable - ชื่อโปรเจ็คคั่นด้วย , (ตัดที่ 300 ตัวอักษร)"
+        list project_names "Nullable - รายชื่อโปรเจ็คในต้นแบบ"
+        number project_count "Nullable"
+        string status_detail "Nullable - ความคืบหน้า / สาเหตุที่ failed"
         string status "pending | available | failed"
         boolean is_active
         string created_at "ISO-8601"
+        string updated_at "ISO-8601"
     }
 
     USERS ||--o{ VM_INSTANCES : "owns (student: max 1 sandbox + 1 exercise)"
     USERS ||--o{ EXERCISES : "creates (instructor)"
     EXERCISES ||--o{ VM_INSTANCES : "spawns"
 ```
+
+---
+
+## 🧩 กลไกต้นแบบแบบฝึกหัด (Template Modes)
+
+`POST /exercises` ตอบกลับทันทีด้วยสถานะ `pending` แล้วทำต้นแบบเป็น **Background Task** (ดูความคืบหน้าที่ `status_detail` ผ่าน `GET /exercises/{id}`)
+
+```mermaid
+flowchart TD
+    A["POST /exercises"] --> B{"ส่ง ami_id?"}
+    B -- "ใช่" --> C["ตรวจสถานะ AMI กับ EC2 แล้วบันทึก record"]
+    B -- "ไม่" --> D["หา VM ของอาจารย์ + อ่านรายชื่อโปรเจ็คจาก GNS3 + เลือกโปรเจ็ค"]
+    D --> E{"EXERCISE_TEMPLATE_MODE"}
+    E -- "gns3project" --> F["export ทีละโปรเจ็ค -> อัปโหลด S3 -> available"]
+    E -- "ami" --> G["snapshot AMI -> (ตัดโปรเจ็คที่ไม่เลือกด้วย VM ชั่วคราว) -> สำรอง S3 -> available"]
+```
+
+| | `gns3project` (ค่าเริ่มต้น) | `ami` |
+|---|---|---|
+| ต้นแบบคือ | ไฟล์ `.gns3project` ต่อโปรเจ็คใน S3 (`s3_keys`) | AMI ของ VM อาจารย์ (`ami_id`) + ไฟล์สำรองใน S3 (`s3_key`) |
+| `SNAPSHOTS_BUCKET` | **จำเป็น** (ไม่ตั้ง = `500`) | ไม่บังคับ (ไม่ตั้ง = ข้ามการสำรอง S3) |
+| ตอนสร้าง VM นักศึกษา | เปิดจาก Base AMI + UserData ดาวน์โหลดไฟล์ผ่าน presigned URL แล้ว import เข้า GNS3 ตอน first boot | เปิดจาก AMI ของแบบฝึกหัดโดยตรง (โปรเจ็คอยู่ใน image ครบแล้ว) |
+| ถ้าต้นแบบหาย | ไฟล์ S3 หาย = `400` ให้แจ้งอาจารย์สร้างใหม่ | AMI หาย → สั่ง restore จาก S3 อัตโนมัติ (ใช้เวลาหลายนาที ได้ `400` ให้ลองใหม่) |
+| ข้อควรระวัง | ต้อง stop node ทุกตัวก่อน export; เลือกโปรเจ็คมากเกิน UserData 16 KB ไม่ได้ | ต้องใช้สิทธิ์ `ec2:CreateStoreImageTask` / `CreateRestoreImageTask` (Learner Lab บาง Lab บล็อก) |
+
+**รายละเอียดเพิ่มเติม**
+- โหมด `gns3project`: backend เรียก GNS3 REST API ของ VM อาจารย์ (`:3080`) โดยลอง Private IP ก่อน (`GNS3_PREFER_PRIVATE_IP`) แล้ว stream ไฟล์ลงดิสก์ชั่วคราวทีละโปรเจ็คก่อนอัปโหลด หากโปรเจ็คใดล้มเหลว ระบบลบไฟล์ที่อัปโหลดไปแล้วและตั้งทั้งแบบฝึกหัดเป็น `failed` (ดู `status_detail`)
+- โหมด `gns3project`: UserData ของ VM นักศึกษาจะบันทึกผลการ import ที่ `/var/log/netlab-import.log` บน VM โปรเจ็คที่ดาวน์โหลด/import ไม่สำเร็จจะถูกข้ามไปโปรเจ็คถัดไป
+- โหมด `ami` เมื่อเลือกบางโปรเจ็ค: snapshot VM อาจารย์ (`NoReboot`) → เปิด VM ชั่วคราว → ลบโปรเจ็คที่ไม่เลือก → snapshot ใหม่ → terminate VM ชั่วคราวและ De-register AMI ต้นทาง; VM ชั่วคราวนับรวมใน `MAX_CONCURRENT_INSTANCES` และไม่ผูกกับโควตาผู้ใช้
+- AMI ที่ระบบสร้างเองใช้ชื่อขึ้นต้น `netlab-ex-` (ต้นแบบ) / `netlab-restore-` (กู้คืนจาก S3) และติด Tag `Project=gns3-cloud`
+
+---
+
+## 📁 โครงสร้างโปรเจกต์
+
+| ไฟล์ (`app/`) | หน้าที่ |
+|---|---|
+| `main.py` | FastAPI app, CORS และ Endpoint ทั้งหมด (Auth / Exercises / Instances / Admin) |
+| `auth.py` | bcrypt, JWT (HS256) และ dependencies ตรวจสิทธิ์ (`get_current_user`, `get_current_admin_user`, `get_current_instructor_or_admin`, `get_current_instructor_user`) |
+| `config.py` | Settings (pydantic-settings) อ่านค่าจาก `.env` |
+| `models.py` | Pydantic models และตัวกรองค่า placeholder ของ Swagger (`""`, `"string"` ถือว่าไม่ได้ระบุ) |
+| `dynamodb_service.py` | CRUD ของ Users / Instances / Exercises และ Atomic Slot Lock (`active_instance_id`, `active_exercise_instance_id`) |
+| `ec2_service.py` | Launch / Start / Stop / Terminate VM, UserData (รหัสผ่าน GNS3 + import โปรเจ็ค), จัดการ AMI และสำรอง/กู้คืน AMI กับ S3 |
+| `gns3_service.py` | คุย GNS3 REST API: ดูรายชื่อ / เลือก / export / ลบโปรเจ็ค |
+| `s3_service.py` | อัปโหลด / ลบไฟล์ และสร้าง presigned URL |
+| `exercise_service.py` | Background Task สร้างต้นแบบ (`build_exercise_export` สำหรับ `gns3project`, `build_exercise_template` สำหรับ `ami`) |
 
 ---
 
@@ -250,17 +305,28 @@ cp .env.example .env
 | `MAX_CONCURRENT_INSTANCES` | จำนวน VM สูงสุดของทั้งระบบ; ตัวอย่างคือ `3` |
 | `USERS_TABLE_NAME`, `INSTANCES_TABLE_NAME`, `EXERCISES_TABLE_NAME` | ชื่อตาราง DynamoDB; ตัวอย่าง `netlab_users`, `netlab_instances`, `netlab_exercises` |
 | `DYNAMODB_ENDPOINT_URL` | ไม่บังคับ; ใช้ระบุ endpoint เช่น `http://localhost:8000` สำหรับ local DynamoDB |
-| `SNAPSHOTS_BUCKET` | ชื่อ private S3 bucket ที่เก็บไฟล์ `.gns3project`; ต้องตั้งค่าหากสร้าง Exercise ด้วยการ export จาก GNS3 |
-| `SNAPSHOTS_PREFIX` | Prefix ของ object ใน bucket; ค่าใน `.env.example` คือ `exercises` |
-| `SNAPSHOT_URL_EXPIRES` | อายุ presigned URL เป็นวินาที; ค่าใน `.env.example` คือ `3600` |
-| `GNS3_API_PORT` | Port ของ GNS3 REST API บน VM อาจารย์; ค่าใน `.env.example` คือ `3080` |
-| `GNS3_PREFER_PRIVATE_IP` | เลือก IP ที่ backend ใช้เชื่อมต่อ GNS3 ก่อน; `false` เหมาะเมื่อ backend รันนอก VPC |
-| `GNS3_EXPORT_TIMEOUT` | Timeout สำหรับ export โปรเจ็คเป็นวินาที; ค่าใน `.env.example` คือ `1800` |
+| `SNAPSHOTS_BUCKET` | ชื่อ private S3 bucket; **จำเป็น** เมื่อ `EXERCISE_TEMPLATE_MODE=gns3project` (ไม่ตั้ง = `POST /exercises` ได้ `500`), ไม่บังคับในโหมด `ami` |
+| `SNAPSHOTS_PREFIX` | Prefix ของ object ใน bucket (ค่าเริ่มต้น `exercises`) |
+| `SNAPSHOT_URL_EXPIRES` | อายุ presigned URL ที่ฝังใน UserData เป็นวินาที (ค่าเริ่มต้น `3600`) |
+| `EXERCISE_TEMPLATE_MODE` | วิธีทำต้นแบบแบบฝึกหัด: `gns3project` (ค่าเริ่มต้น) หรือ `ami` (ดู [กลไกต้นแบบแบบฝึกหัด](#-กลไกต้นแบบแบบฝึกหัด-template-modes)) |
+| `GNS3_EXPORT_INCLUDE_IMAGES` | รวม image ของ node (IOS/QEMU) ในไฟล์ export (ค่าเริ่มต้น `false`; เปิดเมื่อ image อยู่เฉพาะใน VM อาจารย์ ไฟล์จะใหญ่ขึ้น) |
+| `GNS3_EXPORT_INCLUDE_SNAPSHOTS` | รวม GNS3 snapshots ในไฟล์ export (ค่าเริ่มต้น `false`) |
+| `GNS3_API_PORT` | Port ของ GNS3 REST API บน VM (ค่าเริ่มต้น `3080`) |
+| `GNS3_PREFER_PRIVATE_IP` | ลองเชื่อมต่อ GNS3 ผ่าน Private IP ก่อน (ค่าเริ่มต้น `true`); ตั้ง `false` เมื่อ backend รันนอก VPC |
+| `GNS3_EXPORT_TIMEOUT` | Timeout รับไฟล์ export เป็นวินาที (ค่าเริ่มต้น `1800`) |
+| `GNS3_SET_VM_PASSWORD` | สุ่มรหัสผ่าน GNS3 ต่อ VM ผ่าน UserData (ค่าเริ่มต้น `true`); **ต้องเป็น `true`** จึง export/import แบบฝึกหัดได้ |
+| `GNS3_VM_USER` | Username ของ GNS3 server บน VM (ค่าเริ่มต้น `gns3`) |
+| `GNS3_CONFIG_PATH` | path ของ `gns3_server.conf` บน VM (ค่าเริ่มต้น `/home/ubuntu/.config/GNS3/2.2/gns3_server.conf`) |
+| `GNS3_SERVICE_NAME` | ชื่อ systemd service ของ GNS3 (ค่าเริ่มต้น `gns3-server`) |
 | `JWT_SECRET_KEY` | Secret สำหรับลงนาม JWT; เปลี่ยนจากค่าตัวอย่างเป็นค่าสุ่มที่ไม่ซ้ำ |
-| `JWT_ALGORITHM` | Algorithm ของ JWT; ตัวอย่างคือ `HS256` |
-| `JWT_EXPIRE_MINUTES` | อายุ JWT เป็นนาที; ตัวอย่างคือ `1440` |
+| `JWT_ALGORITHM` | Algorithm ของ JWT (ค่าเริ่มต้น `HS256`) |
+| `JWT_EXPIRE_MINUTES` | อายุ JWT เป็นนาที (ค่าเริ่มต้น `1440`) |
 
-ค่าตัวอย่างใน `.env.example` เป็น placeholders ไม่ใช่ credentials หรือ resource IDs ที่ใช้งานได้จริง. การสร้าง Exercise แบบ S3 ต้องมี bucket อยู่แล้วและ AWS identity ของ backend ต้องมีสิทธิ์อ่าน/เขียน object ใน bucket. ตัวแปร `GNS3_SET_VM_PASSWORD`, `GNS3_VM_USER`, `GNS3_CONFIG_PATH` และ `GNS3_SERVICE_NAME` มีค่า default ใน `app/config.py` แต่ไม่ได้อยู่ใน `.env.example`.
+หมายเหตุ:
+- `DEFAULT_AMI_ID`, `DEFAULT_KEY_NAME`, `DEFAULT_SECURITY_GROUP_ID` **ไม่มีค่าเริ่มต้น** ถ้าขาดแอปจะ crash ตอนเริ่ม
+- ค่า default ทั้งหมดอยู่ใน `app/config.py` ส่วนค่าใน `.env.example` เป็น placeholders ไม่ใช่ credentials / resource IDs ที่ใช้งานได้จริง
+- ถ้ารัน backend บน EC2/ECS ที่แนบ Role/Instance Profile ไว้ ไม่จำเป็นต้องใส่ `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (boto3 ใช้ credentials ของ Role ให้เอง)
+- การสร้าง Exercise แบบ S3 ต้องมี bucket อยู่แล้ว และ AWS identity ของ backend ต้องมีสิทธิ์อ่าน/เขียน object ใน bucket (โหมด `ami` ต้องมีสิทธิ์ `ec2:CreateImage`, `ec2:CreateStoreImageTask`, `ec2:CreateRestoreImageTask` เพิ่ม)
 
 > ⚠️ ตัวอย่างขนาดเครื่อง `t2.micro` เหมาะกับทดสอบเท่านั้น ถ้า GNS3 ช้าหรือรัน node ไม่ไหว ให้เพิ่มเป็น `t3.medium` ขึ้นไป (`--instance-type t3.medium` ของ `bootstrap_aws.py`)
 
@@ -333,8 +399,7 @@ aws ec2 describe-instances --filters "Name=tag:Name,Values=netlab-gns3-ami-build
 | `GET` | `/auth/me` | User | ดูโปรไฟล์และ VM ของตัวเอง |
 | `GET` | `/exercises` | Public | ดูรายการแบบฝึกหัด |
 | `GET` | `/exercises/{id}` | Public | ดูรายละเอียดแบบฝึกหัด |
-| `POST` | `/exercises` | Instructor | สร้างแบบฝึกหัด |
-| `POST` | `/exercises/export-projects` | Instructor | Export หลายโปรเจ็ค (เลือกบางอัน หรือ `export_all`) เป็นแบบฝึกหัดหลายอัน |
+| `POST` | `/exercises` | Instructor | สร้างแบบฝึกหัด (เลือกบางโปรเจ็ค / ทุกโปรเจ็ค หรือผูก `ami_id` ที่มีอยู่) |
 | `DELETE` | `/exercises/{id}` | Instructor / Admin | ลบแบบฝึกหัด (พร้อมลบ VM ของแบบฝึกหัดนั้นทั้งหมด) |
 | `POST` | `/instances` | Student / Instructor | สร้าง GNS3 VM (โควตาตามบทบาท ดูหัวข้อ "บทบาทและโควตา VM") |
 | `GET` | `/instances` | User | ดูรายการ VM |
@@ -349,6 +414,7 @@ aws ec2 describe-instances --filters "Name=tag:Name,Values=netlab-gns3-ami-build
 | `DELETE` | `/admin/users/{id}` | Admin | ลบผู้ใช้ |
 | `GET` | `/admin/dashboard` | Admin | ดูผู้ใช้ทุกคนพร้อม VM |
 | `POST` | `/admin/instances/terminate-all` | Admin | Terminate VM ทั้งหมดในระบบ (พร้อมคืนโควตา) |
+| `POST` | `/admin/images/delete-all` | Admin | ลบ AMI + EBS snapshot ต้นแบบที่ระบบสร้างเอง (ไม่แตะ Base AMI) |
 
 ---
 
@@ -382,6 +448,9 @@ Token เป็น JWT (HS256) อายุ 24 ชั่วโมง ส่ง T
 | `409` | ข้อมูลซ้ำ / ลบไม่ได้ |
 | `422` | Body ไม่ครบหรือรูปแบบผิด |
 | `429` | VM ทั้งระบบถึงขีดจำกัด (`MAX_CONCURRENT_INSTANCES`) |
+| `500` | ข้อผิดพลาดฝั่งระบบ เช่น DynamoDB error / ไม่ได้ตั้ง `SNAPSHOTS_BUCKET` / terminate VM ของแบบฝึกหัดไม่สำเร็จ |
+| `502` | backend เชื่อมต่อ GNS3 บน VM ไม่ได้ หรือ GNS3 ปฏิเสธรหัสผ่าน |
+| `503` | ตรวจสถานะต้นแบบ VM (AMI) ไม่สำเร็จชั่วคราว ให้ลองใหม่ |
 
 ---
 
@@ -431,18 +500,26 @@ Token เป็น JWT (HS256) อายุ 24 ชั่วโมง ส่ง T
 {
   "exercise_id": "7b1e0c3a-92f4-4d51-8a1c-0f6d3b2a9e11",
   "instructor_id": "c1d2e3f4-0000-4a5b-9c8d-111122223333",
-  "title": "Lab 1: Basic OSPF Routing",
-  "description": "ตั้งค่า OSPF single-area บน Router 3 ตัว",
+  "title": "Lab Week 3",
+  "description": "ชุดแล็บสัปดาห์ที่ 3",
   "ami_id": null,
   "is_active": true,
-  "s3_key": "exercises/7b1e0c3a-92f4-4d51-8a1c-0f6d3b2a9e11.gns3project",
-  "project_name": "Lab 1: Basic OSPF Routing",
+  "s3_key": "exercises/7b1e0c3a-92f4-4d51-8a1c-0f6d3b2a9e11/project-uuid-1.gns3project",
+  "s3_keys": [
+    "exercises/7b1e0c3a-92f4-4d51-8a1c-0f6d3b2a9e11/project-uuid-1.gns3project",
+    "exercises/7b1e0c3a-92f4-4d51-8a1c-0f6d3b2a9e11/project-uuid-2.gns3project"
+  ],
+  "project_name": "Lab 1: Basic OSPF Routing, Lab 2: BGP Configuration",
+  "project_names": ["Lab 1: Basic OSPF Routing", "Lab 2: BGP Configuration"],
+  "project_count": 2,
   "status_detail": null,
   "status": "available",
   "created_at": "2026-09-27T10:00:00.000000+00:00"
 }
 ```
-`status` = `pending` (กำลัง export โปรเจ็ค) | `available` (พร้อมใช้) | `failed`
+- `status` = `pending` (กำลังทำต้นแบบ) | `available` (พร้อมใช้) | `failed` (ดูสาเหตุที่ `status_detail`)
+- ระหว่าง `pending` ค่า `status_detail` แสดงความคืบหน้า เช่น `1/2 กำลัง export โปรเจ็ค '...' จาก GNS3`
+- `s3_keys` / `project_names` / `project_count` ใช้ในโหมด `gns3project`; โหมด `ami` จะมี `ami_id` (และ `s3_key` ของ AMI ที่สำรองไว้ถ้าตั้ง `SNAPSHOTS_BUCKET`)
 
 ---
 
@@ -513,77 +590,94 @@ Query: `only_active` (ค่าเริ่มต้น `true`, ใส่ `false
 
 ##### `POST /exercises`
 สิทธิ์: **Instructor เท่านั้น** (Admin / Student ได้ `403`)
-**Request**
-```json
-{
-  "title": "Lab 2: BGP Configuration",
-  "description": "ตั้งค่า eBGP peering ระหว่าง 2 AS",
-  "instance_id": "i-0123456789abcdef0",
-  "project_id": "project-uuid",
-  "ami_id": null
-}
-```
-| ฟิลด์ | จำเป็น | คำอธิบาย |
-| :--- | :---: | :--- |
-| `title`, `description` | ✅ | ชื่อและโจทย์ |
-| `instance_id` | ❌ | VM ที่จะทำ Snapshot (ไม่ส่ง = ใช้ VM ปัจจุบันของอาจารย์) |
-| `ami_id` | ❌ | ใช้ AMI ที่มีอยู่แล้ว (ไม่ทำ Snapshot, สถานะ `available` ทันที) |
 
-ถ้าไม่ส่ง `ami_id` ระบบ export โปรเจ็ค GNS3 (`.gns3project`) จาก VM ไปยัง private S3 bucket แบบ background และตั้งสถานะ `pending` ก่อนเปลี่ยนเป็น `available` หรือ `failed` (ตรวจ `status_detail` เมื่อ export ล้มเหลว). ระบุ `instance_id` เพื่อเลือก VM และ `project_id` หากมีหลายโปรเจ็ค (ดู `project_id` ได้จาก `GET /instances/{id}/gns3/projects`); ถ้าไม่ระบุจะใช้ VM/โปรเจ็คเดียวที่มี. ถ้าต้อง export หลายโปรเจ็คพร้อมกัน ใช้ `POST /exercises/export-projects`. ต้อง stop node ทุกตัวในโปรเจ็คก่อน export. การทำงานนี้ต้องตั้ง `SNAPSHOTS_BUCKET` ใน `.env`; ถ้าไม่ตั้งจะได้ `500`. หากส่ง `ami_id` ที่มีอยู่แล้วจะผูกกับ AMI โดยตรงและไม่ export.
-**Response `201`**: Exercise object (`"status": "pending"`)
-**Error:** `400` ไม่มี VM / มีหลาย VM แต่ไม่ระบุ `instance_id` / มีหลายโปรเจ็คแต่ไม่ระบุ `project_id` / ไม่พบโปรเจ็คบน VM / VM ไม่มีรหัสผ่าน GNS3 | `403` ไม่ใช่ Instructor หรือ VM ไม่ใช่ของตัวเอง | `404` ไม่พบ instance | `500` ไม่ได้ตั้ง `SNAPSHOTS_BUCKET` | `502` เชื่อมต่อ GNS3 บน VM ไม่ได้
-
-##### `POST /exercises/export-projects`
-สิทธิ์: **Instructor เท่านั้น** Export หลายโปรเจ็คจาก GNS3 บน VM ในครั้งเดียว (ไม่รองรับ `ami_id`)
-
-**Request (export ทุกโปรเจ็ค)**
+**Request (ทุกโปรเจ็คบน VM)**
 ```json
 {
   "title": "Lab Week 3",
   "description": "ชุดแล็บสัปดาห์ที่ 3",
-  "instance_id": "i-0123456789abcdef0",
-  "export_all": true
+  "instance_id": "i-0123456789abcdef0"
 }
 ```
 **Request (เลือกบางโปรเจ็ค)**
 ```json
 {
-  "title": "Lab Week 3",
-  "description": "ชุดแล็บสัปดาห์ที่ 3",
+  "title": "Lab 2: BGP Configuration",
+  "description": "ตั้งค่า eBGP peering ระหว่าง 2 AS",
   "instance_id": "i-0123456789abcdef0",
   "project_ids": ["project-uuid-1", "project-uuid-2"]
 }
 ```
 | ฟิลด์ | จำเป็น | คำอธิบาย |
 | :--- | :---: | :--- |
-| `title`, `description` | ✅ | ใช้ร่วมกัน ชื่อแบบฝึกหัดแต่ละอันจะเป็น `"<title> - <ชื่อโปรเจ็ค>"` |
-| `instance_id` | ❌ | VM ที่จะ export (ไม่ส่ง = ใช้ VM ปัจจุบัน/VM เดียวของอาจารย์) |
-| `project_ids` | ❌ | รายการ `project_id` ที่เลือก (ส่ง `project_id` เดี่ยวก็ได้) ถ้าไม่ส่งจะ **export ทุกโปรเจ็ค** (ค่าเริ่มต้น) |
-| `export_all` | ❌ | ส่ง `true` ชัดเจน = export ทุกโปรเจ็ค (แม้ระบุ `project_ids` ไว้ด้วยก็ตาม); ถ้าไม่ส่งและไม่ได้เลือกโปรเจ็ค = export ทุกโปรเจ็ค; ถ้าไม่ส่งแต่เลือกโปรเจ็คไว้ = export เฉพาะที่เลือก |
+| `title`, `description` | ✅ | ชื่อและโจทย์ (อย่างน้อย 1 ตัวอักษร) |
+| `instance_id` | ✅ | VM ที่จะใช้ทำต้นแบบ (ไม่ส่ง = VM ปัจจุบันของอาจารย์ หรือ VM เดียวที่มี ถ้ามีหลายเครื่องต้องระบุ) |
+| `project_ids` / `project_id` | ❌ | เลือกโปรเจ็คด้วย GNS3 project ID (ใช้เมื่อชื่อโปรเจ็คซ้ำ) |
+| `project_names` / `project_name` | ❌ | เลือกโปรเจ็คด้วยชื่อ ใส่ได้ (ไม่แยกตัวพิมพ์เล็ก/ใหญ่) |
+| `ami_id` | ❌ | ผูกกับ AMI ที่มีอยู่แล้ว (ไม่ทำต้นแบบใหม่) |
 
-- ไม่ส่ง `project_ids` / `project_id` เลย = export ทุกโปรเจ็คบน VM
-- 1 โปรเจ็ค = 1 แบบฝึกหัด มี `exercise_id`, ไฟล์ S3 และ `status` ของตัวเอง (`pending` → `available` | `failed`) ถ้าบางโปรเจ็ค export ไม่ผ่าน (เช่น ยังมี node รันอยู่) จะเป็น `failed` เฉพาะโปรเจ็คนั้น ไม่กระทบอันอื่น (ดู `status_detail`)
-- background task export ทีละโปรเจ็คตามลำดับ ใช้ `GET /exercises/{id}` ดูสถานะ
-- ต้อง stop node ทุกตัวในแต่ละโปรเจ็คก่อน export และต้องตั้ง `SNAPSHOTS_BUCKET`
+- ไม่ระบุโปรเจ็คเลย = **ทุกโปรเจ็คบน VM**; ระบุได้ทั้ง ID และชื่อพร้อมกัน (รวมกัน) ดู ID ได้จาก `GET /instances/{id}/gns3/projects`
+- ค่าว่างและค่า placeholder `"string"` จาก Swagger UI ถือว่า "ไม่ได้ระบุ"
+- ถ้าส่ง `ami_id`: ระบบตรวจสถานะ AMI กับ EC2 (ต้องเป็น `available` หรือ `pending`) แล้วบันทึกแบบฝึกหัดด้วยสถานะนั้นทันที (`pending` จะถูก sync เป็น `available` เมื่อเรียก `GET /exercises/{id}`) โดยไม่ export และไม่ต้องใช้ VM
+- ถ้าไม่ส่ง `ami_id`: ระบบตรวจ VM + อ่านรายชื่อโปรเจ็คจาก GNS3 แบบ synchronous ก่อน (VM ต้อง `running`) แล้วสร้างแบบฝึกหัดสถานะ `pending` และทำต้นแบบเบื้องหลังตาม `EXERCISE_TEMPLATE_MODE` (ดู [กลไกต้นแบบแบบฝึกหัด](#-กลไกต้นแบบแบบฝึกหัด-template-modes))
+- ควร **stop node ทุกตัวในโปรเจ็คก่อนสร้าง** (GNS3 จะปฏิเสธ export โปรเจ็คที่ node ยังรันอยู่ และโหมด `ami` ควร stop เพื่อให้ snapshot สมบูรณ์)
 
-**Response `201`**
-```json
-{
-  "count": 2,
-  "exercises": [
-    { "...": "Exercise object (status: pending)" },
-    { "...": "Exercise object (status: pending)" }
-  ]
-}
+**Response `201`**: Exercise object (`"status": "pending"` หรือสถานะของ AMI เมื่อส่ง `ami_id`)
+
+**Error:** `400` `ami_id` ใช้งานไม่ได้ / ไม่ระบุ `instance_id` และไม่มี VM หรือมีหลายเครื่อง / ไม่พบโปรเจ็คบน VM / ไม่พบโปรเจ็คที่ระบุ / ชื่อโปรเจ็คซ้ำ (ให้ใช้ `project_id`) / VM ไม่มีรหัสผ่าน GNS3 ในระบบ | `403` ไม่ใช่ Instructor หรือ VM ไม่ใช่ของตัวเอง | `404` ไม่พบ instance | `500` โหมด `gns3project` แต่ไม่ได้ตั้ง `SNAPSHOTS_BUCKET` | `502` เชื่อมต่อ GNS3 บน VM ไม่ได้
+
+##### 🎯 วิธีเลือกโปรเจ็คเอง (Custom Project Selection)
+
+ใช้กับ `POST /exercises` เพื่อกำหนดว่าต้นแบบจะมีโปรเจ็ค GNS3 ใดบ้าง
+
+**ขั้นตอน**
+1. เปิด VM ของคุณให้ `running` แล้วดูรายชื่อโปรเจ็ค (ได้ `project_id` และ `name`):
+   ```bash
+   curl http://localhost:8000/instances/i-0123456789abcdef0/gns3/projects -H "Authorization: Bearer <token>"
+   ```
+2. Stop node ทุกตัวในโปรเจ็คที่จะเลือก (GNS3 ปฏิเสธการ export ถ้า node ยังรันอยู่)
+3. เรียก `POST /exercises` โดยระบุโปรเจ็คตามวิธีใดวิธีหนึ่งด้านล่าง
+
+**วิธีเลือก (4 รูปแบบ)**
+
+| ต้องการ | ส่งอะไร | ตัวอย่าง |
+| :--- | :--- | :--- |
+| ทุกโปรเจ็คบน VM | ไม่ส่งฟิลด์โปรเจ็คเลย | `{ "title": "...", "description": "..." }` |
+| เลือกด้วย ID | `project_ids` (หลายอัน) หรือ `project_id` (อันเดียว) | `"project_ids": ["uuid-1", "uuid-2"]` |
+| เลือกด้วยชื่อ | `project_names` (หลายอัน) หรือ `project_name` (อันเดียว) | `"project_names": ["Lab 1: OSPF", "Lab 2: BGP"]` |
+| ผสม ID + ชื่อ | ส่งทั้งสองกลุ่มพร้อมกัน ระบบ **รวม** ให้ | `"project_ids": ["uuid-1"], "project_names": ["Lab 2: BGP"]` |
+
+**ตัวอย่างเต็ม (เลือก 2 โปรเจ็คด้วยชื่อ)**
+```bash
+curl -X POST http://localhost:8000/exercises \
+  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+  -d '{
+    "title": "Lab Week 3",
+    "description": "OSPF และ BGP",
+    "instance_id": "i-0123456789abcdef0",
+    "project_names": ["Lab 1: Basic OSPF Routing", "Lab 2: BGP Configuration"]
+  }'
 ```
-**Error:** `400` ไม่พบโปรเจ็คที่ระบุ (บอกรายการ id ที่ไม่พบ) หรือไม่มีโปรเจ็คบน VM | `403` ไม่ใช่ Instructor หรือ VM ไม่ใช่ของตัวเอง | `404` ไม่พบ instance | `500` ไม่ได้ตั้ง `SNAPSHOTS_BUCKET` | `502` เชื่อมต่อ GNS3 บน VM ไม่ได้
+
+**กฎการเลือกที่ควรรู้**
+- ชื่อโปรเจ็คไม่แยกตัวพิมพ์เล็ก/ใหญ่ (`lab 1` = `Lab 1`) และ ID/ชื่อที่ซ้ำในรายการเดียวกันจะถูกนับครั้งเดียว
+- ถ้ามีโปรเจ็คชื่อซ้ำกันบน VM ระบบตอบ `400` พร้อมรายการ `project_id` ที่ซ้ำ ให้เปลี่ยนไปเลือกด้วย `project_id` แทน
+- ถ้า ID หรือชื่อที่ระบุไม่มีบน VM ได้ `400` (ข้อความบอก ID ที่ไม่พบ หรือรายชื่อโปรเจ็คที่มีอยู่)
+- ลำดับในผลลัพธ์ (`project_names`, `s3_keys`) เรียงตามลำดับที่ GNS3 ส่งมา ไม่ใช่ตามลำดับที่คุณพิมพ์
+- ค่าว่างหรือ `"string"` (placeholder ของ Swagger UI) ถือว่าไม่ได้ระบุ ถ้าลบจนไม่เหลืออะไรจะเท่ากับเลือก **ทุกโปรเจ็ค**
+- ถ้าเลือกครบทุกโปรเจ็ค ผลเท่ากับไม่ได้เลือก (โหมด `ami` จะใช้ snapshot ตรง ๆ ไม่ต้องเปิด VM ชั่วคราวมาลบโปรเจ็ค)
+
+**ผลของการเลือกในแต่ละโหมด**
+- `gns3project`: export เฉพาะโปรเจ็คที่เลือก เป็นไฟล์ `.gns3project` โปรเจ็คละไฟล์ ถ้าโปรเจ็คใดพัง ทั้งแบบฝึกหัดเป็น `failed`
+- `ami`: ถ้าเลือกบางโปรเจ็ค ระบบเปิด VM ชั่วคราวจาก snapshot แล้ว **ลบโปรเจ็คที่ไม่เลือกออก** ก่อนทำ AMI ต้นแบบ (ไม่กระทบ VM จริงของอาจารย์)
+- ต้องการแยกเป็นหลายแบบฝึกหัด (1 โปรเจ็ค = 1 แบบฝึกหัด) ให้เรียก `POST /exercises` ซ้ำทีละโปรเจ็ค โดยระบุ `project_id` ต่างกัน
 
 ##### `DELETE /exercises/{id}`
 สิทธิ์: Instructor ทุกคน (ลบแบบฝึกหัดของอาจารย์ท่านอื่นได้) หรือ Admin (Student ได้ `403`)
 
 สิ่งที่ระบบทำตามลำดับ:
 1. Terminate **ทุก VM ที่สร้างจากแบบฝึกหัดนี้** (`exercise_id` เดียวกัน ไม่แตะ Sandbox หรือแบบฝึกหัดอื่น) และคืนโควตา Exercise ให้เจ้าของ VM
-2. De-register AMI ของแบบฝึกหัด (ข้าม AMI หลักตาม `DEFAULT_AMI_ID` เสมอ) และลบไฟล์บน S3 ถ้ามี
+2. De-register AMI ของแบบฝึกหัด (พร้อมลบ EBS snapshot; ข้าม AMI หลักตาม `DEFAULT_AMI_ID` เสมอ) และลบไฟล์บน S3 ทั้งหมดที่ผูกอยู่ (`s3_keys` / `s3_key`) ถ้ามี
 3. ลบแถวแบบฝึกหัดใน DynamoDB
 
 **Response `200`**
@@ -615,12 +709,17 @@ Query: `only_active` (ค่าเริ่มต้น `true`, ใส่ `false
 | ฟิลด์ | จำเป็น | คำอธิบาย |
 | :--- | :---: | :--- |
 | `instance_name` | ✅ | ชื่อ VM |
-| `exercise_id` | ❌ | ไม่ส่ง = Sandbox, ส่ง = Exercise VM (แบบฝึกหัดต้อง `available`) |
+| `exercise_id` | ❌ | ไม่ส่ง = Sandbox, ส่ง = Exercise VM (แบบฝึกหัดต้องมีอยู่และ `is_active`) |
 | `instance_type` | ❌ | ไม่ส่งใช้ค่า Default จาก `.env` |
 | `ami_id` | ❌ | ไม่ส่งใช้ AMI ของ exercise หรือ Default |
 
 **Response `201`**: Instance object (`state` เป็น `pending`, `public_ip` เป็น `null` ให้เรียก `GET /instances` ซ้ำจนเป็น `running`)
-**Error:** `400` มี VM ในช่องนั้นแล้ว / แบบฝึกหัดไม่พร้อม | `403` Admin | `429` VM ทั้งระบบเต็ม
+**พฤติกรรมเมื่อระบุ `exercise_id`**
+- แบบฝึกหัดแบบ **S3 project files** (`gns3project`): ต้อง `available` และไฟล์ทุกอันต้องยังอยู่บน S3 ระบบเปิด VM จาก Base AMI แล้วฝัง presigned URL ใน UserData ให้ import ตอน first boot (ต้องเปิด `GNS3_SET_VM_PASSWORD=true` และ UserData รวมต้องไม่เกิน 16 KB) โปรเจ็คจะปรากฏใน GNS3 หลัง VM boot เสร็จ
+- แบบฝึกหัดแบบ **AMI**: ระบบตรวจ AMI ก่อน — `available` ใช้ได้ทันที, `pending` ให้รอแล้วลองใหม่, หายไปจาก EC2 จะสั่งกู้คืนจาก S3 อัตโนมัติ (ได้ `400` ให้ลองใหม่เมื่อเสร็จ), `failed` ใช้ไม่ได้
+- ตัวเลือก `ami_id` ใน Request จะ override AMI ที่ใช้เปิด VM
+
+**Error:** `400` มี VM ในช่องนั้นแล้ว / ไม่พบหรือปิดใช้งานแบบฝึกหัด / แบบฝึกหัดยังไม่พร้อม (`pending` / `failed`) / ไฟล์หรือต้นแบบหายไป / UserData เกิน 16 KB / `RunInstances` ถูกปฏิเสธโดย AWS | `403` Admin | `429` VM ทั้งระบบเต็ม | `500` สร้าง presigned URL ไม่สำเร็จ / ปิด `GNS3_SET_VM_PASSWORD` | `503` ตรวจสถานะ AMI ไม่สำเร็จ
 
 ##### `GET /instances`
 Sync สถานะและ IP จาก EC2 ทุกครั้งที่เรียก (ไม่รวม VM ที่ `terminated`)
@@ -763,10 +862,36 @@ Terminate ถาวรและคืนโควตาให้เจ้าข�
 ```
 `kind` = `sandbox` | `exercise`
 
-#### การสร้าง VM จาก Exercise ที่ export ไม่สำเร็จ (โหมดทดสอบ)
+##### `POST /admin/instances/terminate-all`
+Terminate VM **ทั้งหมด** ที่ระบบบันทึกไว้ (ยังไม่ `terminated`) และคืนโควตาให้เจ้าของทุกเครื่อง ใช้ก่อน `terraform destroy` เพื่อไม่ให้ลบ Security Group ของ VM ไม่ได้ (`DependencyViolation`)
 
-การตั้งค่าทดสอบชั่วคราวใน backend อนุญาตให้สร้าง VM จาก Base AMI ได้เมื่อ Exercise ที่เก็บบน S3 มีสถานะ `failed`; โปรเจ็คจะไม่ถูก import ลง VM. Exercise ที่ยัง pending หรือ Exercise แบบ AMI ที่ `failed` ยังสร้าง VM ไม่ได้.
+Query: `wait` (ค่าเริ่มต้น `true`) = รอจน EC2 รายงาน `terminated` (สูงสุดประมาณ 5 นาที)
 
+**Response `200`**
+```json
+{
+  "terminated_count": 2,
+  "terminated": ["i-0123456789abcdef0", "i-0fedcba9876543210"],
+  "failed": [],
+  "wait_error": null
+}
+```
+`failed` เป็นรายการ `{ "instance_id": "...", "error": "..." }` ของเครื่องที่ terminate ไม่สำเร็จ
+
+##### `POST /admin/images/delete-all`
+ลบ AMI (และ EBS snapshot) ที่ **ระบบสร้างเอง** เท่านั้น คือ AMI ที่ติด Tag `Project=gns3-cloud` และชื่อขึ้นต้นด้วย `netlab-ex-` หรือ `netlab-restore-` ใช้หลัง `terminate-all` และก่อน `terraform destroy`
+
+- **ไม่แตะ** Base AMI (`netlab-gns3-base-*`) และ `DEFAULT_AMI_ID`
+- ไม่ลบไฟล์สำรองบน S3: แบบฝึกหัดที่ยังอยู่ใน DynamoDB จะกู้คืนจาก S3 ให้เองตอนมีคนสร้าง VM
+
+**Response `200`**
+```json
+{
+  "deleted": ["ami-0aaa..."],
+  "skipped": ["ami-0base..."],
+  "failed": []
+}
+```
 
 ---
 
@@ -858,6 +983,9 @@ docker push "${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com/gns3-backend:late
    | `USERS_TABLE_NAME` | `netlab_users` |
    | `INSTANCES_TABLE_NAME` | `netlab_instances` |
    | `EXERCISES_TABLE_NAME` | `netlab_exercises` |
+   | `SNAPSHOTS_BUCKET` | ชื่อ private S3 bucket (จำเป็นในโหมด `gns3project`) |
+   | `EXERCISE_TEMPLATE_MODE` | `gns3project` (ค่าเริ่มต้น) หรือ `ami` |
+   | `GNS3_PREFER_PRIVATE_IP` | `true` ถ้า ECS อยู่ VPC เดียวกับ VM / `false` ถ้า backend ต้องเข้า VM ผ่าน Public IP |
    | `JWT_SECRET_KEY` | ค่าเดียวกับใน `.env` (**ห้ามใช้ค่าตัวอย่าง**) |
    | `JWT_ALGORITHM` | `HS256` |
    | `JWT_EXPIRE_MINUTES` | `1440` |
@@ -919,6 +1047,12 @@ docker push "${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com/gns3-backend:late
 | `LabRole` / `InvalidParameterValue: Value (...) for parameter iamInstanceProfile.name is invalid` ตอนสร้าง VM | ชื่อ Instance Profile ใน `INSTANCE_PROFILE_NAME` ไม่ตรงกับที่มีใน Account | ใช้ `LabInstanceProfile` (หรือรัน `bootstrap_aws.py` ให้หาชื่อที่ถูกต้อง) |
 | `InvalidAMIID.NotFound` ตอนสร้าง VM | AMI ไม่อยู่ใน Account/Region นี้ (เช่น Lab ถูกรีเซ็ต) | สร้างใหม่ด้วย `build_gns3_ami.py` หรือ `--copy-ami` จากเพื่อน |
 | `build_gns3_ami.py` ขึ้น "ไม่พบ marker ใน console output" | Console output ของ builder มาช้า หรือ build ล้มเหลว | ดู log ด้วย `aws ec2 get-console-output --instance-id <ID> --latest --output text` และรันใหม่ด้วย `--keep-builder` เพื่อดีบั๊ก |
+| `POST /exercises` ได้ `502` `เชื่อมต่อ GNS3 server บน VM ไม่ได้` | VM ไม่ `running` / backend เข้า port 3080 ของ VM ไม่ได้ (คนละ VPC หรือ SG ไม่เปิด) | ตรวจสถานะ VM และ SG; ถ้า backend อยู่นอก VPC ตั้ง `GNS3_PREFER_PRIVATE_IP=false` |
+| แบบฝึกหัดเป็น `failed` และ `status_detail` ขึ้น `GNS3 export ไม่สำเร็จ` | node ในโปรเจ็คยังรันอยู่ หรือ export timeout | Stop node ทุกตัวแล้วสร้างใหม่; เพิ่ม `GNS3_EXPORT_TIMEOUT` ถ้าโปรเจ็คใหญ่ |
+| `POST /exercises` ได้ `500` `โหมด gns3project ต้องตั้งค่า SNAPSHOTS_BUCKET` | ไม่ได้ตั้ง `SNAPSHOTS_BUCKET` | สร้าง private bucket แล้วตั้งค่าใน `.env` (หรือเปลี่ยนเป็น `EXERCISE_TEMPLATE_MODE=ami`) |
+| โหมด `ami`: `สำรอง AMI ลง S3 ไม่สำเร็จ` ใน `status_detail` | Lab บล็อก `CreateStoreImageTask` หรือ bucket คนละ region กับ AMI | ต้นแบบยังใช้งานได้ (แค่ไม่มีไฟล์สำรอง) ถ้าต้องการสำรองให้ตรวจสิทธิ์และ region ของ bucket |
+| `POST /instances` ได้ `400` `มีโปรเจ็คมากเกินกว่าที่ UserData (16 KB) รองรับ` | แบบฝึกหัดมีโปรเจ็คจำนวนมาก presigned URL ยาวเกินขีดจำกัด | แยกเป็นหลายแบบฝึกหัด |
+| VM แบบฝึกหัดเปิดแล้วไม่มีโปรเจ็คใน GNS3 | import ตอน first boot ล้มเหลว (ดาวน์โหลด/import) | SSH เข้า VM ดู `/var/log/netlab-import.log` (presigned URL อาจหมดอายุถ้า VM boot ช้ามาก ตรวจ `SNAPSHOT_URL_EXPIRES`) |
 
 ---
 
@@ -933,6 +1067,9 @@ docker push "${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com/gns3-backend:late
 7. **Security Group**: `3080` และ `5900-5999` เปิด `0.0.0.0/0` (เพื่อให้นักศึกษาเชื่อมต่อได้จากทุกที่) ส่วน `22` เปิดเฉพาะ IP ผู้ดูแล ถ้าต้องการเข้มงวดขึ้น ให้จำกัด Source ตามเครือข่ายของมหาวิทยาลัย
 8. **Tag `Project=gns3-cloud`**: ทุก Resource ที่ระบบสร้างถูกติด Tag นี้เพื่อแยกจาก Resource อื่นในบัญชีเดียวกัน และ API ใช้นับโควตา `MAX_CONCURRENT_INSTANCES`
 9. **ปิด VM ที่ไม่ใช้**: Learner Lab มี Budget จำกัด ควร Stop / Terminate VM ทุกครั้งที่เลิกใช้งาน
+10. **S3 แบบ Private**: bucket ต้องไม่เปิดสาธารณะ VM ของนักศึกษาดาวน์โหลดไฟล์แบบฝึกหัดผ่าน presigned URL อายุสั้น (`SNAPSHOT_URL_EXPIRES`) จึงไม่ต้องให้สิทธิ์ S3 กับ VM
+11. **CORS**: ปัจจุบัน `main.py` ตั้ง `allow_origins=["*"]` พร้อม `allow_credentials=True` เหมาะกับช่วงพัฒนา เมื่อใช้งานจริงควรจำกัดเป็นโดเมนของ Frontend
+12. **Cookie**: `access_token` เป็น `HttpOnly` + `SameSite=Lax` (ยังไม่ตั้ง `Secure` ควรเพิ่มเมื่อให้บริการผ่าน HTTPS)
 
 **.gitignore แนะนำ**
 ```
