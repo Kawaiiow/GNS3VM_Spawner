@@ -59,10 +59,20 @@ def handle_instructor_delete_instance(request: Request, instance_id: str):
         return template.TemplateResponse(request=request, name="404.html", status_code=status.HTTP_404_NOT_FOUND)
     return RedirectResponse(url="/instructor/dashboard", status_code=status.HTTP_303_SEE_OTHER)
 
-@router.post("/exercise/create")
-def handle_instructor_create_exercise(request: Request, instance_id: str = Form(...), title: str = Form(...), description: str = Form(...)):
+@router.get("/exercise/create")
+def render_instructor_create_exercise(request: Request, instance_id: str):
     try:
-        response = httpx.post(f"{BACKEND_URL}/exercises", json={"instance_id": instance_id, "title": title, "description": description}, cookies={"access_token": request.cookies.get("access_token", "")}, timeout=10.0)
+        response = httpx.get(f"{BACKEND_URL}/instances/{instance_id}/gns3/projects", cookies={"access_token": request.cookies.get("access_token", "")}, timeout=10.0)
+    except:
+        return template.TemplateResponse(request=request, name="503.html", status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+    if response.status_code in (401, 403):
+        return template.TemplateResponse(request=request, name="404.html", status_code=status.HTTP_404_NOT_FOUND)
+    return template.TemplateResponse(request=request, name="instructor/create.html", context={"instance_id": instance_id, "projects": response.json()["projects"]})
+
+@router.post("/exercise/create")
+def handle_instructor_create_exercise(request: Request, instance_id: str = Form(...), title: str = Form(...), description: str = Form(...), project_ids: list[str] = Form(alias="project_ids[]")):
+    try:
+        response = httpx.post(f"{BACKEND_URL}/exercises", json={"instance_id": instance_id, "title": title, "description": description, "description": description, "project_ids": project_ids}, cookies={"access_token": request.cookies.get("access_token", "")}, timeout=10.0)
     except:
         return template.TemplateResponse(request=request, name="503.html", status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
     if response.status_code in (401, 403):

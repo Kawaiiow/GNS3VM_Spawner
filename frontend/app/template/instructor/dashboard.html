@@ -101,18 +101,11 @@
                 <p class="text-gray-600 text-base">เลือกแบบฝึกหัดเพื่อสร้างเครื่องพร้อมแบบฝึกหัดนั้น</p>
             </div>
             {% if sb and sb.state in ["running", "stopped"] %}
-            <form id="save" action="/instructor/exercise/create" method="POST">
-                <input type="hidden" name="instance_id" value="{{ sb.instance_id }}">
-                <button type="submit" class="bg-gray-800 hover:bg-gray-900 transition-colors duration-200 ease-in-out text-white px-4 py-3 rounded-xl text-sm">เพิ่ม</button>
-            </form>
+            <a href="/instructor/exercise/create?instance_id={{ sb.instance_id }}" class="bg-gray-800 hover:bg-gray-900 transition-colors duration-200 ease-in-out text-white px-4 py-3 rounded-xl text-sm">เพิ่มแบบฝึกหัด</a>
+            {% else %}
+            <p class="bg-gray-600 text-gray-200 px-4 py-3 rounded-xl text-sm">เพิ่มแบบฝึกหัด</p>
             {% endif %}
         </div>
-        {% if sb and sb.state in ["running", "stopped"] %}
-        <div class="flex gap-2 mb-4">
-            <input form="save" type="text" name="title" placeholder="หัวข้อ" required class="w-full bg-white border rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-600">
-            <input form="save" type="text" name="description" placeholder="คำอธิบาย" required class="w-full bg-white border rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-600">
-        </div>
-        {% endif %}
         <div class="bg-white border rounded-lg overflow-x-auto shadow-sm">
             <table class="min-w-lg w-full">
                 <tr class="text-xs text-gray-600 tracking-wide">
@@ -131,6 +124,8 @@
                                 <input type="hidden" name="exercise_id" value="{{ exercise.exercise_id }}">
                                 <button type="submit" class="text-xs px-3 py-2 bg-emerald-600 hover:bg-emerald-700 transition-colors duration-200 ease-in-out rounded-xl text-white">ทำ</button>
                             </form>
+                            {% else %}
+                            <p class="text-xs px-3 py-2 bg-gray-600 rounded-xl text-gray-200">ทำ</p>
                             {% endif %}
                             <form action="/instructor/exercise/delete/{{ exercise.exercise_id }}" method="POST" class="inline">
                                 <button type="submit" class="text-xs px-3 py-2 bg-rose-600 hover:bg-rose-700 transition-colors duration-200 ease-in-out rounded-xl text-white">ลบ</button>

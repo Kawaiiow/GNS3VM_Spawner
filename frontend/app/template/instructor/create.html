@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    {% include "component/head.html" %}
+    <title>เพิ่มแบบฝึกหัด - NetLab</title>
+</head>
+<body class="bg-white">
+    {% include "component/navbar.html" %}
+    <div class="max-w-md mx-auto min-h-screen px-6 py-28">
+        <div class="text-center">
+            <img src="/static/image/netlab_icon.png" class="inline-block max-h-24 w-auto mb-6">
+            <p class="text-2xl text-gray-800">เพิ่มแบบฝึกหัด</p>
+            <p class="text-base text-gray-600 mb-6">เพิ่มแบบฝึกหัดใน NetLab</p>
+        </div>
+        <form action="/instructor/exercise/create" method="POST">
+            <input type="hidden" name="instance_id" value="{{ instance_id }}">
+            <div class="mb-4">
+                <label class="block text-sm text-gray-800 mb-2">หัวข้อ</label>
+                <input type="text" name="title" placeholder="กรอกหัวข้อ" required class="w-full bg-white border rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-600"/>
+            </div>
+            <div class="mb-4">
+                <label class="block text-sm text-gray-800 mb-2">คำอธิบาย</label>
+                <input type="text" name="description" placeholder="กรอกคำอธิบาย" required class="w-full bg-white border rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-600"/>
+            </div>
+            <div class="mb-6">
+                <label class="block text-sm text-gray-800 mb-2">โจทย์</label>
+                {% if projects %}
+                <div class="flex flex-col gap-2">
+                    {% for project in projects %}
+                    <label class="flex items-center justify-between gap-2 text-sm text-gray-600 cursor-pointer">
+                        <span class="flex items-center gap-2">
+                            <input type="checkbox" name="project_ids[]" value="{{ project.project_id }}" checked>
+                            <span>{{ project.name }}</span>
+                        </span>
+                        <span class="text-xs text-gray-600">{{ project.status }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-sm text-gray-600">ไม่พบโจทย์ใน GNS3</p>
+                {% endif %}
+            </div>
+            {% if projects %}
+            <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 transition-colors duration-200 ease-in-out text-white text-sm px-4 py-3 rounded-xl">เพิ่ม</button>
+            {% else %}
+            <p class="w-full bg-gray-600 text-gray-200 text-sm text-center px-4 py-3 rounded-xl">เพิ่ม</p>
+            {% endif %}
+        </form>
+    </div>
+    {% include "component/footer.html" %}
+</body>
+</html>
