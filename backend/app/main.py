@@ -493,9 +493,10 @@ def admin_delete_all_images(
     current_user: UserInDB = Depends(get_current_admin_user),
 ):
     """
-    ลบ AMI (และ EBS snapshot) ทั้งหมดที่ติด tag Project=gns3-cloud (เฉพาะ Admin)
+    ลบ AMI (และ EBS snapshot) ที่ระบบสร้างเอง (เฉพาะ Admin): ติด tag Project=gns3-cloud
+    และชื่อขึ้นต้นด้วย netlab-ex- / netlab-restore- (ต้นแบบแบบฝึกหัด)
     ใช้ก่อน terraform destroy หลัง terminate-all เพราะ Terraform ไม่รู้จัก AMI ที่ระบบสร้างเอง
-    - ไม่แตะ AMI หลัก (DEFAULT_AMI_ID)
+    - ไม่แตะ Base AMI (netlab-gns3-base-*) และ DEFAULT_AMI_ID
     - ไฟล์สำรองบน S3 ไม่ถูกลบ: แบบฝึกหัดที่ยังอยู่ใน DynamoDB จะกู้คืนจาก S3 ให้เองตอนสร้าง VM
     """
     return ec2_service.deregister_all_project_images()

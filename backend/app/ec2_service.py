@@ -697,10 +697,16 @@ def deregister_image(ami_id: str) -> None:
             pass  # best-effort
 
 
+# AMI ที่ backend สร้างเอง (ต้นแบบแบบฝึกหัด / กู้คืนจาก S3 / ตัวต้นทางชั่วคราว) เท่านั้นที่ลบทิ้งได้
+# Base AMI (netlab-gns3-base-*) ไม่อยู่ในรายการนี้ จึงไม่ถูกแตะแม้ติด tag Project เดียวกัน
+MANAGED_IMAGE_NAME_PREFIXES = ("netlab-ex-", "netlab-restore-")
+
+
 def deregister_all_project_images() -> dict:
     """
-    ลบ AMI ทุกอันที่ติด tag Project=gns3-cloud (และ EBS snapshot ของมัน) ที่เป็นของบัญชีนี้
-    - ข้าม AMI หลัก (DEFAULT_AMI_ID) เสมอ
+    ลบ AMI (และ EBS snapshot) ที่ backend สร้างเอง: ติด tag Project=gns3-cloud และชื่อขึ้นต้นด้วย
+    netlab-ex- หรือ netlab-restore- เท่านั้น
+    - ไม่แตะ Base AMI (netlab-gns3-base-*) และข้าม DEFAULT_AMI_ID เสมอ (กันซ้ำอีกชั้น)
     - ใช้ก่อน terraform destroy เพื่อกวาด AMI ที่ Terraform ไม่รู้จัก (รวมตัวที่หลุดจากตาราง DynamoDB)
     """
     settings = get_settings()
@@ -718,7 +724,9 @@ def deregister_all_project_images() -> dict:
     failed: list[dict] = []
     for img in images:
         ami = img["ImageId"]
-        if ami == settings.default_ami_id:
+        if ami == settings.default_ami_id or not (img.get("Name") or "").startswith(
+            MANAGED_IMAGE_NAME_PREFIXES
+        ):
             skipped.append(ami)
             continue
         try:
