@@ -67,6 +67,9 @@ resource "aws_eip" "web" {
 # (cleanup ต้อง depend on web เพื่อให้ถูกลบก่อน ตอนที่ API ยังทำงานอยู่)
 # ต้องเข้าถึง port 8000 ของ web จากเครื่องที่รัน terraform ได้ (expose_backend_port = true)
 # ถ้าเรียก API ไม่ได้ จะ fallback ไปใช้ aws CLI ลบตาม SG ของ VM lab (ถ้ามี aws ใน PATH)
+# หลังลบ VM แล้ว จะลบ AMI ต้นแบบแบบฝึกหัดที่ระบบสร้างเอง (ชื่อ netlab-ex-* / netlab-restore-*, tag Project=gns3-cloud)
+# ผ่าน POST /admin/images/delete-all (fallback: aws CLI) เป็น best-effort ไม่ทำให้ destroy ล้ม
+# ไม่แตะ Base AMI (netlab-gns3-base-*) และไฟล์สำรองใน S3
 resource "terraform_data" "cleanup_lab_vms" {
   # destroy-time provisioner อ้างได้เฉพาะ self จึงเก็บค่าที่ต้องใช้ไว้ใน input
   input = {
@@ -123,6 +126,37 @@ resource "terraform_data" "cleanup_lab_vms" {
           exit 1
         } else {
           Write-Host "warning: บาง VM ลบผ่าน API ไม่สำเร็จ (ไม่พบ aws CLI สำหรับ fallback)"
+        }
+      }
+
+      # 3) ลบ AMI ต้นแบบแบบฝึกหัดที่ระบบสร้างเอง (Terraform ไม่รู้จัก) - best effort ไม่ทำให้ destroy ล้ม
+      $imgDone = $false
+      if ($apiRan) {
+        try {
+          $r = Invoke-RestMethod -Method Post -Uri "$env:API_BASE/admin/images/delete-all" -Headers $headers -TimeoutSec 600
+          Write-Host "API delete-all images: deleted=$(@($r.deleted).Count) skipped=$(@($r.skipped).Count) failed=$(@($r.failed).Count)"
+          if (@($r.failed).Count -eq 0) { $imgDone = $true }
+        } catch {
+          Write-Host "API delete images failed: $($_.Exception.Message)"
+        }
+      }
+      if (-not $imgDone) {
+        if (Get-Command aws -ErrorAction SilentlyContinue) {
+          try {
+            $imgs = aws ec2 describe-images --owners self --filters "Name=tag:Project,Values=gns3-cloud" --output json | ConvertFrom-Json
+            foreach ($img in @($imgs.Images)) {
+              if (-not ($img.Name -like "netlab-ex-*" -or $img.Name -like "netlab-restore-*")) { continue }
+              aws ec2 deregister-image --image-id $img.ImageId | Out-Null
+              foreach ($bdm in @($img.BlockDeviceMappings)) {
+                if ($bdm.Ebs -and $bdm.Ebs.SnapshotId) { aws ec2 delete-snapshot --snapshot-id $bdm.Ebs.SnapshotId | Out-Null }
+              }
+              Write-Host "deregistered $($img.ImageId) ($($img.Name))"
+            }
+          } catch {
+            Write-Host "warning: aws CLI ลบ AMI ไม่สำเร็จ: $($_.Exception.Message)"
+          }
+        } else {
+          Write-Host "warning: ยังไม่ได้ลบ AMI ต้นแบบ (ไม่มี API/aws CLI) ลบ netlab-ex-* และ netlab-restore-* เองใน EC2 console"
         }
       }
     EOT
