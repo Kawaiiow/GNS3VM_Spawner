@@ -24,7 +24,7 @@ FastAPI backend สำหรับระบบ **NetLab** ให้นักศ�
    - ลงชื่อเข้าใช้ด้วย Username หรือ Member ID พร้อมรหัสผ่านที่เข้ารหัสด้วย `bcrypt`
    - ออก **JWT (HS256)** รองรับทั้ง `Authorization: Bearer <token>` และ `HttpOnly Cookie` (ออกจากระบบด้วย `POST /auth/logout`)
    - แบ่งสิทธิ์: `student`, `instructor`, `admin`
-   - Admin จัดการผู้ใช้ผ่าน API ได้ครบ (สร้าง / ดูรายชื่อ / แก้ไข / ลบ) และมี Dashboard ภาพรวม
+   - Admin จัดการผู้ใช้ผ่าน API ได้ครบ (สร้าง / ดูรายชื่อ / ดูรายบุคคล / แก้ไข / ลบ) มี Dashboard ภาพรวม และสั่ง Terminate VM ทั้งระบบได้ในครั้งเดียว (`POST /admin/instances/terminate-all`)
    - มีสคริปต์ CLI สำหรับสร้างบัญชี (`scripts/create_user.py`)
 2. **EC2 & VM Lifecycle with DynamoDB Persistence**
    - **โควตา VM ตามบทบาท** (ป้องกัน Race Condition ด้วย DynamoDB Conditional Write):
@@ -336,7 +336,7 @@ aws ec2 describe-instances --filters "Name=tag:Name,Values=netlab-gns3-ami-build
 | `POST` | `/exercises` | Instructor | สร้างแบบฝึกหัด |
 | `POST` | `/exercises/export-projects` | Instructor | Export หลายโปรเจ็ค (เลือกบางอัน หรือ `export_all`) เป็นแบบฝึกหัดหลายอัน |
 | `DELETE` | `/exercises/{id}` | Instructor / Admin | ลบแบบฝึกหัด (พร้อมลบ VM ของแบบฝึกหัดนั้นทั้งหมด) |
-| `POST` | `/instances` | Student / Instructor | สร้าง GNS3 VM (Sandbox 1 เครื่องต่อคน) |
+| `POST` | `/instances` | Student / Instructor | สร้าง GNS3 VM (โควตาตามบทบาท ดูหัวข้อ "บทบาทและโควตา VM") |
 | `GET` | `/instances` | User | ดูรายการ VM |
 | `GET` | `/instances/{id}/gns3/projects` | Instructor / Admin (เจ้าของ VM) | ดูรายชื่อโปรเจ็คที่มีใน GNS3 บน VM |
 | `POST` | `/instances/{id}/start` | เจ้าของ / Admin | เปิดเครื่อง |
@@ -344,9 +344,11 @@ aws ec2 describe-instances --filters "Name=tag:Name,Values=netlab-gns3-ami-build
 | `DELETE` | `/instances/{id}` | เจ้าของ / Admin | ลบ (Terminate) VM ถาวร |
 | `POST` | `/admin/users` | Admin | สร้างผู้ใช้ |
 | `GET` | `/admin/users` | Admin | ดูรายชื่อผู้ใช้ทั้งหมด |
+| `GET` | `/admin/users/{id}` | Admin | ดูข้อมูลผู้ใช้รายบุคคล |
 | `PATCH` | `/admin/users/{id}` | Admin | แก้ไขผู้ใช้ / รีเซ็ตรหัสผ่าน |
 | `DELETE` | `/admin/users/{id}` | Admin | ลบผู้ใช้ |
 | `GET` | `/admin/dashboard` | Admin | ดูผู้ใช้ทุกคนพร้อม VM |
+| `POST` | `/admin/instances/terminate-all` | Admin | Terminate VM ทั้งหมดในระบบ (พร้อมคืนโควตา) |
 
 ---
 
@@ -529,7 +531,7 @@ Query: `only_active` (ค่าเริ่มต้น `true`, ใส่ `false
 
 ถ้าไม่ส่ง `ami_id` ระบบ export โปรเจ็ค GNS3 (`.gns3project`) จาก VM ไปยัง private S3 bucket แบบ background และตั้งสถานะ `pending` ก่อนเปลี่ยนเป็น `available` หรือ `failed` (ตรวจ `status_detail` เมื่อ export ล้มเหลว). ระบุ `instance_id` เพื่อเลือก VM และ `project_id` หากมีหลายโปรเจ็ค (ดู `project_id` ได้จาก `GET /instances/{id}/gns3/projects`); ถ้าไม่ระบุจะใช้ VM/โปรเจ็คเดียวที่มี. ถ้าต้อง export หลายโปรเจ็คพร้อมกัน ใช้ `POST /exercises/export-projects`. ต้อง stop node ทุกตัวในโปรเจ็คก่อน export. การทำงานนี้ต้องตั้ง `SNAPSHOTS_BUCKET` ใน `.env`; ถ้าไม่ตั้งจะได้ `500`. หากส่ง `ami_id` ที่มีอยู่แล้วจะผูกกับ AMI โดยตรงและไม่ export.
 **Response `201`**: Exercise object (`"status": "pending"`)
-**Error:** `400` ไม่มี VM / มีหลาย VM แต่ไม่ระบุ `instance_id` | `403` ไม่ใช่ Instructor หรือ VM ไม่ใช่ของตัวเอง
+**Error:** `400` ไม่มี VM / มีหลาย VM แต่ไม่ระบุ `instance_id` / มีหลายโปรเจ็คแต่ไม่ระบุ `project_id` / ไม่พบโปรเจ็คบน VM / VM ไม่มีรหัสผ่าน GNS3 | `403` ไม่ใช่ Instructor หรือ VM ไม่ใช่ของตัวเอง | `404` ไม่พบ instance | `500` ไม่ได้ตั้ง `SNAPSHOTS_BUCKET` | `502` เชื่อมต่อ GNS3 บน VM ไม่ได้
 
 ##### `POST /exercises/export-projects`
 สิทธิ์: **Instructor เท่านั้น** Export หลายโปรเจ็คจาก GNS3 บน VM ในครั้งเดียว (ไม่รองรับ `ami_id`)
@@ -557,7 +559,7 @@ Query: `only_active` (ค่าเริ่มต้น `true`, ใส่ `false
 | `title`, `description` | ✅ | ใช้ร่วมกัน ชื่อแบบฝึกหัดแต่ละอันจะเป็น `"<title> - <ชื่อโปรเจ็ค>"` |
 | `instance_id` | ❌ | VM ที่จะ export (ไม่ส่ง = ใช้ VM ปัจจุบัน/VM เดียวของอาจารย์) |
 | `project_ids` | ❌ | รายการ `project_id` ที่เลือก (ส่ง `project_id` เดี่ยวก็ได้) ถ้าไม่ส่งจะ **export ทุกโปรเจ็ค** (ค่าเริ่มต้น) |
-| `export_all` | ❌ | `true` = export ทุกโปรเจ็ค (ไม่ส่งก็เท่ากับ `true` เมื่อไม่ได้เลือกโปรเจ็ค; ถ้าเลือกโปรเจ็คไว้จะ export เฉพาะที่เลือก) |
+| `export_all` | ❌ | ส่ง `true` ชัดเจน = export ทุกโปรเจ็ค (แม้ระบุ `project_ids` ไว้ด้วยก็ตาม); ถ้าไม่ส่งและไม่ได้เลือกโปรเจ็ค = export ทุกโปรเจ็ค; ถ้าไม่ส่งแต่เลือกโปรเจ็คไว้ = export เฉพาะที่เลือก |
 
 - ไม่ส่ง `project_ids` / `project_id` เลย = export ทุกโปรเจ็คบน VM
 - 1 โปรเจ็ค = 1 แบบฝึกหัด มี `exercise_id`, ไฟล์ S3 และ `status` ของตัวเอง (`pending` → `available` | `failed`) ถ้าบางโปรเจ็ค export ไม่ผ่าน (เช่น ยังมี node รันอยู่) จะเป็น `failed` เฉพาะโปรเจ็คนั้น ไม่กระทบอันอื่น (ดู `status_detail`)
@@ -577,7 +579,7 @@ Query: `only_active` (ค่าเริ่มต้น `true`, ใส่ `false
 **Error:** `400` ไม่พบโปรเจ็คที่ระบุ (บอกรายการ id ที่ไม่พบ) หรือไม่มีโปรเจ็คบน VM | `403` ไม่ใช่ Instructor หรือ VM ไม่ใช่ของตัวเอง | `404` ไม่พบ instance | `500` ไม่ได้ตั้ง `SNAPSHOTS_BUCKET` | `502` เชื่อมต่อ GNS3 บน VM ไม่ได้
 
 ##### `DELETE /exercises/{id}`
-สิทธิ์: Instructor ทุกคน (ลบแบบฝึกหัดของอาจารย์ท่านอื่นได้) หรือ Admin / Student ได้ `403`
+สิทธิ์: Instructor ทุกคน (ลบแบบฝึกหัดของอาจารย์ท่านอื่นได้) หรือ Admin (Student ได้ `403`)
 
 สิ่งที่ระบบทำตามลำดับ:
 1. Terminate **ทุก VM ที่สร้างจากแบบฝึกหัดนี้** (`exercise_id` เดียวกัน ไม่แตะ Sandbox หรือแบบฝึกหัดอื่น) และคืนโควตา Exercise ให้เจ้าของ VM

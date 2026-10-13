@@ -124,24 +124,9 @@ terraform apply
 
 ### 5) รอให้เครื่อง build เสร็จ
 
-หลัง apply เครื่องยังต้องติดตั้ง Docker และ build image อีก **ประมาณ 3-5 นาที** ตรวจสถานะ:
+หลัง apply เครื่องยังต้องติดตั้ง Docker และ build image อีก **ประมาณ 3-5 นาที** ตรวจสถานะ: docker compose ps -a
 
-```bash
-ssh -i <labsuser.pem> ec2-user@<web_public_ip>
-sudo tail -f /var/log/cloud-init-output.log     # ดูจนเห็นว่า docker compose up จบ
-cd /opt/app && docker compose ps                 # backend ต้อง healthy
-```
-> เข้าผ่านเว็บไปเช็คได้
-
-> `key_name` เริ่มต้นเป็น `vockey` ให้ดาวน์โหลดไฟล์ `.pem` จากหน้า AWS Details
-
-### 6) สร้างบัญชี admin คนแรก
-
-ใส่รหัสใน ไฟล์ terraform.tfvars
-
-ไม่ต้องรัน `init_dynamodb.py` เพราะ Terraform สร้างตารางให้แล้ว (รันซ้ำจะชื่อชนกัน)
-
-### 7) เปิดใช้งาน
+### 6) เปิดใช้งาน
 
 เปิด `web_url` ในเบราว์เซอร์ แล้ว login ด้วย admin ที่สร้างไว้
 

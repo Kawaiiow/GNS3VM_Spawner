@@ -43,6 +43,21 @@ def build_exercise_key(exercise_id: str) -> str:
     return f"{prefix}/{exercise_id}.gns3project" if prefix else f"{exercise_id}.gns3project"
 
 
+def build_bundle_key(exercise_id: str) -> str:
+    """key ของไฟล์ bundle (.zip) ที่มัดรวมหลาย .gns3project ไว้ในไฟล์เดียว"""
+    prefix = get_settings().snapshots_prefix.strip("/")
+    return f"{prefix}/{exercise_id}.zip" if prefix else f"{exercise_id}.zip"
+
+
+def object_exists(key: str) -> bool:
+    """เช็คว่ามีไฟล์นี้ใน S3 จริงไหม (ใช้ก่อน launch VM กัน VM ที่ import ไม่ได้)"""
+    try:
+        get_s3_client().head_object(Bucket=_bucket(), Key=key)
+        return True
+    except ClientError:
+        return False
+
+
 def upload_fileobj(fileobj: BinaryIO, key: str) -> None:
     get_s3_client().upload_fileobj(
         fileobj, _bucket(), key, ExtraArgs={"ContentType": "application/zip"}
