@@ -7,14 +7,15 @@ exercise_service.py
   1) snapshot VM ของอาจารย์เป็น AMI (มีทุกโปรเจ็คครบ รวมดิสก์/อิมเมจของ node)
   2) ถ้าเลือกเฉพาะบางโปรเจ็ค: เปิด VM ชั่วคราวจาก AMI นั้น -> ลบโปรเจ็คที่ไม่เลือกออก -> snapshot เป็น AMI ใหม่
      (ถ้าเลือกทุกโปรเจ็ค/ไม่ระบุ ข้ามขั้นนี้ ใช้ AMI จากข้อ 1 เลย)
-  3) สำรอง AMI ลง S3 (EC2 CreateStoreImageTask) -> ได้ s3_key
-  4) บันทึก ami_id + s3_key ลง DynamoDB แล้ว status = available
+  3) สำรอง AMI ลง S3 (EC2 CreateStoreImageTask) -> ได้ s3_key (ไม่บังคับ: ข้าม/ล้มเหลวได้ AMI ยังใช้งานได้)
+  4) บันทึก ami_id (+ s3_key ถ้ามี) ลง DynamoDB แล้ว status = available
 ตอนสร้าง VM นักศึกษา: ใช้ AMI นี้ได้ทันที ถ้า AMI หายไปจะกู้คืนจาก S3 ให้อัตโนมัติ (ดู ec2_service._ensure_template_ready)
 """
 
 from typing import Optional
 
 from app import ec2_service, gns3_service
+from app.config import get_settings
 from app.dynamodb_service import update_exercise_fields, update_exercise_status
 
 
@@ -81,13 +82,25 @@ def build_exercise_template(
             ec2_service.deregister_image(src_ami)
             src_ami = None
 
-        # 3) สำรองลง S3
-        _progress(exercise_id, "3/3 กำลังสำรองต้นแบบ VM ลง S3 (อาจใช้เวลาหลายนาที)")
-        s3_key = ec2_service.store_image_to_s3(final_ami)
-        stored = True
+        # 3) สำรองลง S3 (best-effort): AMI พร้อมใช้แล้ว ถ้าสำรองลง S3 ไม่ได้ก็ยังต้องใช้สร้าง VM ได้
+        #    (ผลเสียคือ ถ้า AMI ถูกลบภายหลังจะกู้คืนจาก S3 ไม่ได้)
+        s3_key: Optional[str] = None
+        note: Optional[str] = None
+        if get_settings().snapshots_bucket:
+            _progress(exercise_id, "3/3 กำลังสำรองต้นแบบ VM ลง S3 (อาจใช้เวลาหลายนาที)")
+            try:
+                s3_key = ec2_service.store_image_to_s3(final_ami)
+            except Exception as e:  # noqa: BLE001
+                note = f"ต้นแบบพร้อมใช้ แต่สำรองลง S3 ไม่สำเร็จ: {_error_text(e)}"
+        else:
+            note = "ต้นแบบพร้อมใช้ (ไม่ได้ตั้ง SNAPSHOTS_BUCKET จึงไม่ได้สำรองลง S3)"
 
-        update_exercise_fields(exercise_id, {"ami_id": final_ami, "s3_key": s3_key})
-        update_exercise_status(exercise_id, "available")
+        fields = {"ami_id": final_ami}
+        if s3_key:
+            fields["s3_key"] = s3_key
+        update_exercise_fields(exercise_id, fields)
+        stored = True  # AMI ถูกผูกกับ exercise แล้ว ห้ามลบทิ้งในส่วน cleanup
+        update_exercise_status(exercise_id, "available", detail=note)
     except Exception as e:  # noqa: BLE001 - ต้องจับทุกอย่างเพื่อไม่ให้ค้าง pending
         # เก็บกวาดทรัพยากรที่สร้างค้างไว้
         if builder_id:

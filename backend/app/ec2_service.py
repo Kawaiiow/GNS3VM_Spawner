@@ -856,7 +856,10 @@ def launch_builder_instance(
     if settings.instance_profile_name:
         kwargs["IamInstanceProfile"] = {"Name": settings.instance_profile_name}
 
-    resp = client.run_instances(**kwargs)
+    try:
+        resp = client.run_instances(**kwargs)
+    except ClientError as e:
+        raise RuntimeError(f"เปิด VM ชั่วคราวไม่สำเร็จ: {e}") from e
     iid = resp["Instances"][0]["InstanceId"]
     try:
         client.get_waiter("instance_running").wait(

@@ -1,6 +1,31 @@
 from enum import Enum
-from typing import Optional
-from pydantic import BaseModel, Field
+from typing import Any, Optional
+from pydantic import BaseModel, Field, field_validator
+
+# ค่า placeholder ที่ Swagger UI (/docs) ใส่ให้อัตโนมัติตอนกด "Try it out"
+# ถ้าไม่ลบทิ้ง ระบบจะเข้าใจว่าเป็นค่าจริง (เช่น ami_id="string") แล้วพัง
+_SWAGGER_PLACEHOLDERS = {"", "string"}
+
+
+def _blank_to_none(v: Any) -> Any:
+    """ข้อความว่าง/"string" ของ Swagger -> None (ถือว่าไม่ได้ระบุ)"""
+    if isinstance(v, str):
+        v = v.strip()
+        if v.lower() in _SWAGGER_PLACEHOLDERS:
+            return None
+    return v
+
+
+def _clean_str_list(v: Any) -> Any:
+    """ลบ placeholder ออกจาก list ของข้อความ ถ้าไม่เหลืออะไร -> None"""
+    if isinstance(v, list):
+        cleaned = [
+            x.strip()
+            for x in v
+            if isinstance(x, str) and x.strip().lower() not in _SWAGGER_PLACEHOLDERS
+        ]
+        return cleaned or None
+    return v
 
 
 class UserRole(str, Enum):
@@ -78,6 +103,18 @@ class ExerciseCreate(BaseModel):
         None, description="AMI ID (ถ้ามี AMI อยู่แล้วและไม่ต้องการทำ Snapshot ใหม่)"
     )
 
+    @field_validator(
+        "instance_id", "project_name", "project_id", "ami_id", mode="before"
+    )
+    @classmethod
+    def _clean_optional_str(cls, v: Any) -> Any:
+        return _blank_to_none(v)
+
+    @field_validator("project_names", "project_ids", mode="before")
+    @classmethod
+    def _clean_optional_list(cls, v: Any) -> Any:
+        return _clean_str_list(v)
+
 
 class ExerciseResponse(ExerciseBase):
     exercise_id: str
@@ -113,6 +150,11 @@ class LaunchInstanceRequest(BaseModel):
     ami_id: Optional[str] = Field(
         None, description="ถ้าไม่ระบุจะใช้ AMI ของ exercise หรือ AMI GNS3 default จาก config"
     )
+
+    @field_validator("exercise_id", "instance_type", "ami_id", mode="before")
+    @classmethod
+    def _clean_optional_str(cls, v: Any) -> Any:
+        return _blank_to_none(v)
 
 
 class InstanceActionResponse(BaseModel):

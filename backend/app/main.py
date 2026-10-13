@@ -173,14 +173,9 @@ def _verify_instance_ownership(instance_id: str, user: UserInDB):
 
 
 def _resolve_export_instance(instance_id: Optional[str], current_user: UserInDB) -> dict:
-    """หา VM ที่จะ export จาก (ตรวจสิทธิ์ + ตั้งค่า bucket) แล้วคืน instance record"""
-    settings = get_settings()
-    if not settings.snapshots_bucket:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="ยังไม่ได้ตั้งค่า SNAPSHOTS_BUCKET ใน .env",
-        )
-
+    """หา VM ที่จะ snapshot (ตรวจสิทธิ์) แล้วคืน instance record
+    หมายเหตุ: SNAPSHOTS_BUCKET ไม่บังคับ ถ้าไม่ตั้งจะข้ามการสำรองลง S3 (ต้นแบบยังเป็น AMI ใช้สร้าง VM ได้)
+    """
     active = current_user.active_instance_id
     if active == "PENDING_LAUNCH":
         active = None
@@ -263,12 +258,22 @@ def create_exercise(
     - คำแนะนำ: ควร stop node ทุกตัวใน GNS3 ก่อนสร้าง เพื่อให้ snapshot สมบูรณ์
     """
     if payload.ami_id:
+        # ผูกกับ AMI ที่มีอยู่แล้ว: ต้องเป็น AMI จริงและใช้งานได้ (กัน ami_id มั่ว เช่น "string")
+        ami_state = ec2_service.get_image_status(payload.ami_id)
+        if ami_state not in ("available", "pending"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"AMI '{payload.ami_id}' ใช้งานไม่ได้ (สถานะ: {ami_state}) "
+                    "ตรวจ ami_id ให้ถูกต้อง หรือไม่ต้องใส่ ami_id เพื่อให้ระบบ snapshot จาก VM ของอาจารย์"
+                ),
+            )
         item = create_exercise_record(
             instructor_id=current_user.user_id,
             title=payload.title,
             description=payload.description,
             ami_id=payload.ami_id,
-            status="available",
+            status=ami_state,  # available | pending (GET /exercises/{id} จะ sync เป็น available เอง)
             is_active=True,
         )
         return ExerciseResponse(**item)
