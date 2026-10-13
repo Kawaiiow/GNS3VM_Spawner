@@ -1,7 +1,9 @@
 """
 s3_service.py
 -------------
-เก็บ/ดึง/ลบ Snapshot ของแบบฝึกหัด (ไฟล์ .gns3project) ใน S3 bucket ส่วนตัว
+เก็บ/ดึง/ลบ Snapshot ของแบบฝึกหัดใน S3 bucket ส่วนตัว
+- แบบใหม่: ต้นแบบ VM (AMI ที่ EC2 สำรองลง S3 ด้วย CreateStoreImageTask)
+- แบบเก่า: ไฟล์ .gns3project เดี่ยว (ยังรองรับ)
 - backend อัปโหลดไฟล์ที่ export จาก GNS3 ของอาจารย์
 - VM นักศึกษาดาวน์โหลดผ่าน presigned URL อายุสั้น (ไม่ต้องให้สิทธิ์ S3 กับ VM)
 """
@@ -43,18 +45,12 @@ def build_exercise_key(exercise_id: str) -> str:
     return f"{prefix}/{exercise_id}.gns3project" if prefix else f"{exercise_id}.gns3project"
 
 
-def build_bundle_key(exercise_id: str) -> str:
-    """key ของไฟล์ bundle (.zip) ที่มัดรวมหลาย .gns3project ไว้ในไฟล์เดียว"""
-    prefix = get_settings().snapshots_prefix.strip("/")
-    return f"{prefix}/{exercise_id}.zip" if prefix else f"{exercise_id}.zip"
-
-
 def object_exists(key: str) -> bool:
-    """เช็คว่ามีไฟล์นี้ใน S3 จริงไหม (ใช้ก่อน launch VM กัน VM ที่ import ไม่ได้)"""
+    """เช็คว่ามีไฟล์นี้ใน S3 จริงไหม"""
     try:
         get_s3_client().head_object(Bucket=_bucket(), Key=key)
         return True
-    except ClientError:
+    except (ClientError, HTTPException):
         return False
 
 

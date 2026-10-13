@@ -51,7 +51,7 @@ class ExerciseBase(BaseModel):
     title: str = Field(..., description="ชื่อแบบฝึกหัด Lab")
     description: Optional[str] = Field(None, description="คำอธิบายแบบฝึกหัด หรือโจทย์")
     ami_id: Optional[str] = Field(
-        None, description="AWS AMI ID (เฉพาะแบบฝึกหัดที่ผูกกับ AMI ตรงๆ; แบบ export ไป S3 จะเป็น null)"
+        None, description="AWS AMI ID ของต้นแบบ VM (ถ้า AMI ถูกลบ ระบบจะกู้คืนจาก S3 ให้เองตอนสร้าง VM)"
     )
     is_active: bool = Field(default=True, description="สถานะเปิดให้นักศึกษาใช้งานหรือไม่")
 
@@ -62,29 +62,32 @@ class ExerciseCreate(BaseModel):
     instance_id: Optional[str] = Field(
         None, description="EC2 Instance ID ของอาจารย์ที่ต้องการทำ Snapshot (ถ้าไม่ระบุ จะดึงจาก VM ปัจจุบันของผู้สอน)"
     )
+    project_name: Optional[str] = Field(
+        None, description="ชื่อโปรเจ็ค GNS3 ที่ต้องการให้อยู่ในต้นแบบ VM (ไม่ระบุอะไรเลย = ทุกโปรเจ็ค)"
+    )
+    project_names: Optional[list[str]] = Field(
+        None, description="หลายชื่อโปรเจ็ค (เลือกเฉพาะบางโปรเจ็ค)"
+    )
     project_id: Optional[str] = Field(
-        None, description="GNS3 project ID เดียวที่ต้องการ export (ใช้แทน project_ids ได้ ถ้าเลือกแค่ตัวเดียว)"
+        None, description="GNS3 project ID (ใช้แทนชื่อได้ กรณีชื่อโปรเจ็คซ้ำกัน)"
+    )
+    project_ids: Optional[list[str]] = Field(
+        None, description="หลาย GNS3 project ID"
     )
     ami_id: Optional[str] = Field(
         None, description="AMI ID (ถ้ามี AMI อยู่แล้วและไม่ต้องการทำ Snapshot ใหม่)"
-    )
-    project_ids: Optional[list[str]] = Field(
-        None, description="รายการ GNS3 project ID ที่ต้องการ export รวมเป็นแบบฝึกหัดเดียว (ถ้าไม่ระบุ = ทุกโปรเจ็ค)"
-    )
-    export_all: bool = Field(
-        True, description="true = export ทุกโปรเจ็คบน VM (ค่าเริ่มต้น; ถ้าระบุ project_ids โดยไม่ส่งฟิลด์นี้ จะ export เฉพาะที่เลือก)"
     )
 
 
 class ExerciseResponse(ExerciseBase):
     exercise_id: str
     instructor_id: str
-    status: str = Field(..., description="สถานะ AMI snapshot: pending | available | failed")
-    s3_key: Optional[str] = Field(None, description="S3 object key ของไฟล์ .gns3project")
-    project_name: Optional[str] = Field(None, description="ชื่อโปรเจ็ค GNS3 ที่ export (ถ้ามีหลายโปรเจ็คจะรวมชื่อคั่นด้วย ,)")
-    project_names: Optional[list[str]] = Field(None, description="รายชื่อโปรเจ็ค GNS3 ทั้งหมดที่อยู่ใน bundle")
-    project_count: Optional[int] = Field(None, description="จำนวนโปรเจ็ค (.gns3project) ใน bundle")
-    status_detail: Optional[str] = Field(None, description="รายละเอียดเมื่อ status = failed")
+    status: str = Field(..., description="สถานะต้นแบบ VM: pending | available | failed")
+    s3_key: Optional[str] = Field(None, description="S3 object key ของต้นแบบ VM ที่สำรองไว้ (AMI ที่เก็บใน S3)")
+    project_name: Optional[str] = Field(None, description="ชื่อโปรเจ็คในต้นแบบ (หลายโปรเจ็คคั่นด้วย ,)")
+    project_names: Optional[list[str]] = Field(None, description="รายชื่อโปรเจ็ค GNS3 ทั้งหมดในต้นแบบ VM")
+    project_count: Optional[int] = Field(None, description="จำนวนโปรเจ็คในต้นแบบ VM")
+    status_detail: Optional[str] = Field(None, description="ความคืบหน้าตอน pending / สาเหตุเมื่อ failed")
     created_at: str
 
 

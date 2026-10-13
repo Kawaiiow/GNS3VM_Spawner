@@ -12,6 +12,7 @@ ec2_service.py
 
 import secrets
 import string
+import time
 from urllib.parse import quote
 from datetime import datetime, timezone
 from typing import Optional
@@ -36,6 +37,7 @@ from app.dynamodb_service import (
     mark_instance_terminated,
     release_user_vm,
     reserve_user_vm_slot,
+    update_exercise_fields,
     update_exercise_status,
     update_instance_state,
 )
@@ -164,6 +166,52 @@ def _count_active_project_instances(client) -> int:
     return sum(len(r["Instances"]) for r in resp["Reservations"])
 
 
+def _ensure_template_ready(exercise_id: str, exercise: dict) -> None:
+    """
+    ตรวจต้นแบบ VM ของแบบฝึกหัดก่อนสร้าง VM:
+    - AMI พร้อม (available)        -> ผ่าน
+    - AMI กำลัง pending            -> 400 รอสักครู่
+    - AMI หายไป (not_found)        -> สั่งกู้คืนจากไฟล์สำรองบน S3 (restore) แล้ว 400 ให้ลองใหม่เมื่อเสร็จ
+    """
+    ami = exercise["ami_id"]
+    s3_key = exercise.get("s3_key")
+    st = get_image_status(ami)
+
+    if st == "available":
+        if exercise.get("status") != "available":
+            update_exercise_status(exercise_id, "available")
+        return
+    if st == "pending":
+        raise HTTPException(
+            status_code=400,
+            detail="ต้นแบบ VM ของแบบฝึกหัดนี้กำลังถูกเตรียม/กู้คืน กรุณารอสักครู่แล้วลองใหม่",
+        )
+    if st == "not_found":
+        if not s3_key or not s3_service.object_exists(s3_key):
+            raise HTTPException(
+                status_code=400,
+                detail="ไม่พบต้นแบบ VM ทั้งบน EC2 และ S3 กรุณาแจ้งอาจารย์ให้สร้างแบบฝึกหัดใหม่",
+            )
+        try:
+            new_ami = restore_image_from_s3(
+                s3_key, f"netlab-restore-{exercise_id[:8]}-{int(time.time())}"
+            )
+        except ClientError as e:
+            raise HTTPException(
+                status_code=500, detail=f"สั่งกู้คืนต้นแบบ VM จาก S3 ไม่สำเร็จ: {e}"
+            ) from e
+        update_exercise_fields(exercise_id, {"ami_id": new_ami})
+        update_exercise_status(exercise_id, "pending", detail="กำลังกู้คืนต้นแบบ VM จาก S3")
+        raise HTTPException(
+            status_code=400,
+            detail="ต้นแบบ VM ไม่อยู่บน EC2 แล้ว ระบบกำลังกู้คืนจาก S3 (ใช้เวลาหลายนาที) กรุณาลองใหม่ภายหลัง",
+        )
+    if st == "failed":
+        update_exercise_status(exercise_id, "failed", detail="AMI ของต้นแบบ VM อยู่ในสถานะ failed")
+        raise HTTPException(status_code=400, detail="ต้นแบบ VM ของแบบฝึกหัดนี้เสียหาย (failed)")
+    raise HTTPException(status_code=503, detail="ตรวจสอบสถานะต้นแบบ VM ไม่สำเร็จ กรุณาลองใหม่")
+
+
 def launch_instance(
     user_id: str,
     instance_name: str,
@@ -193,34 +241,42 @@ def launch_instance(
                 status_code=400,
                 detail=f"Exercise '{exercise_id}' not found or inactive.",
             )
-        # Snapshot ต้องพร้อมใช้งาน (available) ก่อนถึงจะสร้าง VM จากแบบฝึกหัดนี้ได้
-        ex_status = exercise.get("status", "available")
-        if ex_status != "available":
-            real_status = (
-                get_image_status(exercise["ami_id"])
-                if exercise.get("ami_id")
-                else ex_status  # แบบ S3: ใช้สถานะที่ background export อัปเดตไว้ (pending/failed)
-            )
-            if real_status in ("available", "failed"):
-                update_exercise_status(exercise_id, real_status)
-            if real_status != "available":
+        template_ami = exercise.get("ami_id")
+        s3_key = exercise.get("s3_key")
+        if template_ami:
+            # ต้นแบบ VM (AMI ที่สำรองไว้ใน S3): เช็คว่า AMI ยังอยู่/พร้อมใช้ ถ้าหายไปจะสั่งกู้คืนจาก S3
+            _ensure_template_ready(exercise_id, exercise)
+            exercise_s3_key = None  # ไม่ต้อง import โปรเจ็คตอน boot เพราะโปรเจ็คอยู่ใน image ครบแล้ว
+        else:
+            # แบบเก่า: ไฟล์ .gns3project เดี่ยวบน S3 (launch base AMI แล้ว import ตอน first boot)
+            ex_status = exercise.get("status", "available")
+            if ex_status != "available":
                 raise HTTPException(
                     status_code=400,
                     detail=(
                         "แบบฝึกหัดนี้ยังไม่พร้อมใช้งาน "
-                        f"(snapshot สถานะ: {real_status}) กรุณารอสักครู่แล้วลองใหม่"
+                        f"(สถานะ: {ex_status}) กรุณารอสักครู่แล้วลองใหม่"
                     ),
                 )
+            if not s3_key:
+                raise HTTPException(
+                    status_code=400,
+                    detail="แบบฝึกหัดนี้ไม่มีทั้งต้นแบบ VM (AMI) และไฟล์บน S3 (ข้อมูลไม่สมบูรณ์)",
+                )
+            if not s3_service.object_exists(s3_key):
+                raise HTTPException(
+                    status_code=400,
+                    detail="ไม่พบไฟล์ของแบบฝึกหัดนี้บน S3 กรุณาแจ้งอาจารย์ให้สร้างแบบฝึกหัดใหม่",
+                )
+            exercise_s3_key = s3_key
+            if not settings.gns3_set_vm_password:
+                raise HTTPException(
+                    status_code=500,
+                    detail="ต้องเปิด GNS3_SET_VM_PASSWORD=true เพื่อ import แบบฝึกหัดจาก S3",
+                )
         if not resolved_ami:
-            resolved_ami = exercise.get("ami_id")
-        # แบบฝึกหัดที่ export ไว้ที่ S3: launch จาก base AMI แล้ว import โปรเจ็คตอน first boot
-        exercise_s3_key = exercise.get("s3_key")
+            resolved_ami = template_ami
         exercise_title = exercise.get("title")
-        if exercise_s3_key and not settings.gns3_set_vm_password:
-            raise HTTPException(
-                status_code=500,
-                detail="ต้องเปิด GNS3_SET_VM_PASSWORD=true เพื่อ import แบบฝึกหัดจาก S3",
-            )
 
     # 1. Atomic reservation in DynamoDB (เฉพาะ student) แยกช่อง Sandbox / Exercise
     slot = EXERCISE_SLOT if exercise_id else SANDBOX_SLOT
@@ -617,11 +673,203 @@ def get_image_status(ami_id: str) -> str:
 
 def deregister_image(ami_id: str) -> None:
     """
-    ยกเลิกการลงทะเบียน (De-register) AMI บน AWS EC2 เมื่อลบแบบฝึกหัด
+    ยกเลิกการลงทะเบียน (De-register) AMI และลบ EBS snapshot ที่ผูกกับ AMI นั้นด้วย (กันค่าใช้จ่ายค้าง)
     """
     client = get_ec2_client()
+    snapshot_ids: list[str] = []
+    try:
+        images = client.describe_images(ImageIds=[ami_id]).get("Images", [])
+        for bdm in (images[0].get("BlockDeviceMappings", []) if images else []):
+            sid = (bdm.get("Ebs") or {}).get("SnapshotId")
+            if sid:
+                snapshot_ids.append(sid)
+    except ClientError:
+        pass
     try:
         client.deregister_image(ImageId=ami_id)
     except ClientError as e:
         if e.response["Error"]["Code"] != "InvalidAMIID.NotFound":
             raise HTTPException(status_code=400, detail=str(e)) from e
+    for sid in snapshot_ids:
+        try:
+            client.delete_snapshot(SnapshotId=sid)
+        except ClientError:
+            pass  # best-effort
+
+
+def deregister_all_project_images() -> dict:
+    """
+    ลบ AMI ทุกอันที่ติด tag Project=gns3-cloud (และ EBS snapshot ของมัน) ที่เป็นของบัญชีนี้
+    - ข้าม AMI หลัก (DEFAULT_AMI_ID) เสมอ
+    - ใช้ก่อน terraform destroy เพื่อกวาด AMI ที่ Terraform ไม่รู้จัก (รวมตัวที่หลุดจากตาราง DynamoDB)
+    """
+    settings = get_settings()
+    client = get_ec2_client()
+    try:
+        images = client.describe_images(
+            Owners=["self"],
+            Filters=[{"Name": "tag:Project", "Values": [PROJECT_TAG_VALUE]}],
+        ).get("Images", [])
+    except ClientError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    deleted: list[str] = []
+    skipped: list[str] = []
+    failed: list[dict] = []
+    for img in images:
+        ami = img["ImageId"]
+        if ami == settings.default_ami_id:
+            skipped.append(ami)
+            continue
+        try:
+            deregister_image(ami)
+            deleted.append(ami)
+        except HTTPException as e:
+            failed.append({"ami_id": ami, "error": str(e.detail)})
+    return {"deleted": deleted, "skipped": skipped, "failed": failed}
+
+
+# ==========================================
+# ต้นแบบ VM ของแบบฝึกหัด: AMI <-> S3
+# ==========================================
+
+IMAGE_READY_TIMEOUT = 1800     # วินาที: รอ AMI เป็น available
+STORE_TASK_TIMEOUT = 7200      # วินาที: รอ EC2 สำรอง AMI ลง S3
+
+
+def wait_for_image(ami_id: str, timeout: int = IMAGE_READY_TIMEOUT, interval: int = 15) -> None:
+    """รอ AMI เป็น available (ใช้ใน background task) ผิดพลาด/หมดเวลา -> RuntimeError"""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        st = get_image_status(ami_id)
+        if st == "available":
+            return
+        if st in ("failed", "not_found", "invalid", "error"):
+            raise RuntimeError(f"AMI {ami_id} สร้างไม่สำเร็จ (สถานะ: {st})")
+        time.sleep(interval)  # pending / unknown (ชั่วคราว)
+    raise RuntimeError(f"รอ AMI {ami_id} เป็น available เกินเวลาที่กำหนด")
+
+
+def store_image_to_s3(ami_id: str, timeout: int = STORE_TASK_TIMEOUT, interval: int = 20) -> str:
+    """
+    สำรอง AMI ลง S3 bucket ของระบบ (EC2 CreateStoreImageTask) แล้วรอจนเสร็จ คืนค่า S3 object key
+    ข้อกำหนดของ AWS: bucket ต้องอยู่ region เดียวกับ AMI และ credential ต้องมีสิทธิ์ ec2:CreateStoreImageTask
+    """
+    settings = get_settings()
+    if not settings.snapshots_bucket:
+        raise RuntimeError("ยังไม่ได้ตั้งค่า SNAPSHOTS_BUCKET")
+    client = get_ec2_client()
+    try:
+        client.create_store_image_task(ImageId=ami_id, Bucket=settings.snapshots_bucket)
+    except ClientError as e:
+        raise RuntimeError(f"สั่งสำรอง AMI ลง S3 ไม่สำเร็จ: {e}") from e
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            tasks = client.describe_store_image_tasks(ImageIds=[ami_id]).get(
+                "StoreImageTaskResults", []
+            )
+        except ClientError:
+            tasks = []
+        if tasks:
+            t = tasks[0]
+            state = t.get("StoreTaskState")
+            if state == "Completed":
+                return t["ObjectKey"]
+            if state == "Failed":
+                raise RuntimeError(
+                    f"สำรอง AMI ลง S3 ล้มเหลว: {t.get('StoreTaskFailureReason') or 'unknown'}"
+                )
+        time.sleep(interval)
+    raise RuntimeError("สำรอง AMI ลง S3 เกินเวลาที่กำหนด")
+
+
+def restore_image_from_s3(object_key: str, name: str) -> str:
+    """
+    กู้คืน AMI จากไฟล์สำรองบน S3 (EC2 CreateRestoreImageTask) คืนค่า ImageId ใหม่
+    AMI จะเป็น pending จนกว่า restore จะเสร็จ (เช็คด้วย get_image_status)
+    """
+    resp = get_ec2_client().create_restore_image_task(
+        Bucket=get_settings().snapshots_bucket,
+        ObjectKey=object_key,
+        Name=name,
+        TagSpecifications=[
+            {
+                "ResourceType": "image",
+                "Tags": [
+                    {"Key": "Project", "Value": PROJECT_TAG_VALUE},
+                    {"Key": "Name", "Value": name},
+                ],
+            }
+        ],
+    )
+    return resp["ImageId"]
+
+
+def launch_builder_instance(
+    source_ami: str, instance_name: str, instance_type: Optional[str], user_id: str
+) -> dict:
+    """
+    เปิด VM ชั่วคราวจาก AMI เพื่อ "ตัดโปรเจ็คที่ไม่เลือกออก" ก่อนทำต้นแบบ
+    ไม่ผูกโควตา/ไม่บันทึกใน DynamoDB (ลบทิ้งหลังใช้งานด้วย terminate_builder_instance)
+    คืน dict ที่ใช้กับ gns3_service ได้ (instance_id, private_ip, public_ip, gns3_user, gns3_password)
+    """
+    settings = get_settings()
+    client = get_ec2_client()
+    if _count_active_project_instances(client) >= settings.max_concurrent_instances:
+        raise RuntimeError(
+            f"ถึงจำนวน instance สูงสุด ({settings.max_concurrent_instances}) สร้าง VM ชั่วคราวไม่ได้ "
+            "กรุณา terminate instance เก่าก่อน"
+        )
+
+    gns3_user = settings.gns3_vm_user
+    gns3_password = _generate_vm_password()
+    kwargs = dict(
+        ImageId=source_ami,
+        InstanceType=instance_type or settings.default_instance_type,
+        KeyName=settings.default_key_name,
+        SecurityGroupIds=[settings.default_security_group_id],
+        MinCount=1,
+        MaxCount=1,
+        UserData=_build_gns3_user_data(gns3_user, gns3_password),
+        TagSpecifications=[
+            {
+                "ResourceType": "instance",
+                "Tags": [
+                    {"Key": "Name", "Value": instance_name},
+                    {"Key": "Project", "Value": PROJECT_TAG_VALUE},
+                    {"Key": "UserId", "Value": user_id},
+                    {"Key": "Purpose", "Value": "exercise-builder"},
+                ],
+            }
+        ],
+    )
+    if settings.instance_profile_name:
+        kwargs["IamInstanceProfile"] = {"Name": settings.instance_profile_name}
+
+    resp = client.run_instances(**kwargs)
+    iid = resp["Instances"][0]["InstanceId"]
+    try:
+        client.get_waiter("instance_running").wait(
+            InstanceIds=[iid], WaiterConfig={"Delay": 5, "MaxAttempts": 60}
+        )
+        inst = client.describe_instances(InstanceIds=[iid])["Reservations"][0]["Instances"][0]
+    except Exception:
+        terminate_builder_instance(iid)
+        raise
+    return {
+        "instance_id": iid,
+        "private_ip": inst.get("PrivateIpAddress"),
+        "public_ip": inst.get("PublicIpAddress"),
+        "gns3_user": gns3_user,
+        "gns3_password": gns3_password,
+    }
+
+
+def terminate_builder_instance(instance_id: str) -> None:
+    """ลบ VM ชั่วคราว (best-effort: ไม่ throw)"""
+    try:
+        get_ec2_client().terminate_instances(InstanceIds=[instance_id])
+    except ClientError:
+        pass

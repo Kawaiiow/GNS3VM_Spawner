@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import Depends, BackgroundTasks, FastAPI, HTTPException, Query, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 
-from app import ec2_service, gns3_service, s3_service
+from app import ec2_service, exercise_service, gns3_service, s3_service
 from app.auth import (
     create_access_token,
     get_current_admin_user,
@@ -251,11 +251,16 @@ def create_exercise(
 ):
     """
     สร้างแบบฝึกหัด Lab ใหม่ (เฉพาะ Instructor, Admin สร้างไม่ได้)
-    - ค่าเริ่มต้น: Export โปรเจ็ค GNS3 (.gns3project) จาก VM ของอาจารย์ขึ้น S3
-      * ระบุ instance_id (หรือใช้ VM เดียวที่มี) และ project_id (หรือใช้โปรเจ็คเดียวที่มี)
-      * ต้อง stop node ทุกตัวในโปรเจ็คก่อน export (GNS3 ไม่ยอม export โปรเจ็คที่กำลังรัน)
-      * export ทำเบื้องหลัง: status = pending -> available | failed (ดู status_detail)
-    - หากระบุ ami_id: ผูกกับ AMI ที่มีอยู่แล้วโดยตรง (ไม่ export)
+    ได้ "ต้นแบบ VM" 1 อัน ที่สำรองไว้ใน S3 (เป็น image ของ VM ไม่ใช่ไฟล์ .gns3project)
+    - ไม่ระบุโปรเจ็คเลย (ค่าเริ่มต้น): ต้นแบบมีทุกโปรเจ็คบน VM ของอาจารย์
+    - ระบุ project_name / project_names (หรือ project_id / project_ids): ต้นแบบมีเฉพาะโปรเจ็คที่เลือก
+    - ระบุ instance_id (หรือใช้ VM เดียวที่มี) ดูรายชื่อโปรเจ็คได้ที่ GET /instances/{id}/gns3/projects
+    - ทำเบื้องหลัง: status = pending -> available | failed (ดูความคืบหน้า/สาเหตุที่ status_detail)
+      ลำดับ: snapshot VM -> (ถ้าเลือกบางโปรเจ็ค) ตัดโปรเจ็คอื่นออกใน VM ชั่วคราว -> สำรองลง S3
+    - สร้าง VM จากแบบฝึกหัดนี้ผ่าน POST /instances (exercise_id) จะได้ VM ที่มีโปรเจ็คครบตามที่เลือก
+      ถ้า AMI ถูกลบไปแล้ว ระบบจะกู้คืนจากไฟล์ใน S3 ให้เอง
+    - หากระบุ ami_id: ผูกกับ AMI ที่มีอยู่แล้วโดยตรง (ไม่ทำต้นแบบใหม่)
+    - คำแนะนำ: ควร stop node ทุกตัวใน GNS3 ก่อนสร้าง เพื่อให้ snapshot สมบูรณ์
     """
     if payload.ami_id:
         item = create_exercise_record(
@@ -270,28 +275,38 @@ def create_exercise(
 
     instance_rec = _resolve_export_instance(payload.instance_id, current_user)
 
-    # ตรวจสอบเบื้องต้นแบบ synchronous (VM เปิดอยู่, รหัสผ่านถูก, เลือกโปรเจ็คได้) แล้วค่อย export เบื้องหลัง
+    # ตรวจสอบเบื้องต้นแบบ synchronous (VM เปิดอยู่, รหัสผ่านถูก, เลือกโปรเจ็คได้) แล้วค่อยทำต้นแบบเบื้องหลัง
     projects = gns3_service.list_projects(instance_rec)
-    project = gns3_service.pick_project(projects, payload.project_id)
+
+    ids = list(payload.project_ids or [])
+    if payload.project_id:
+        ids.append(payload.project_id)
+    names = list(payload.project_names or [])
+    if payload.project_name:
+        names.append(payload.project_name)
+
+    selected = gns3_service.select_projects(projects, ids, names)
+    export_all = len(selected) == len(projects)  # ไม่ระบุอะไร หรือเลือกครบทุกอัน = ใช้ snapshot ตรงๆ
+    project_names = [p.get("name") or p["project_id"] for p in selected]
 
     exercise_id = str(uuid.uuid4())
-    s3_key = s3_service.build_exercise_key(exercise_id)
     item = create_exercise_record(
         exercise_id=exercise_id,
         instructor_id=current_user.user_id,
         title=payload.title,
         description=payload.description,
-        s3_key=s3_key,
-        project_name=project["name"],
+        project_name=", ".join(project_names)[:300],
+        project_names=project_names,
         status="pending",
         is_active=True,
     )
     background_tasks.add_task(
-        gns3_service.export_exercise_to_s3,
+        exercise_service.build_exercise_template,
         exercise_id,
+        current_user.user_id,
         instance_rec,
-        project["project_id"],
-        s3_key,
+        [p["project_id"] for p in selected],
+        export_all,
     )
     return ExerciseResponse(**item)
 
@@ -313,57 +328,6 @@ def list_gns3_projects(
     return {"instance_id": instance_id, "count": len(projects), "projects": projects}
 
 
-@app.post("/exercises/export-projects", response_model=ExerciseListResponse, status_code=201)
-def create_exercises_from_projects(
-    payload: ExerciseCreate,
-    background_tasks: BackgroundTasks,
-    current_user: UserInDB = Depends(get_current_instructor_user),
-):
-    """
-    Export หลายโปรเจ็คจาก GNS3 ในครั้งเดียว (เฉพาะ Instructor)
-    - ไม่ระบุ project_ids/project_id (หรือ export_all=true): export ทุกโปรเจ็คบน VM (ค่าเริ่มต้น)
-    - project_ids=[...] (หรือ project_id เดียว): export เฉพาะโปรเจ็คที่เลือก
-    - 1 โปรเจ็ค = 1 แบบฝึกหัด (ชื่อ: "<title> - <ชื่อโปรเจ็ค>") แต่ละอันมี status ของตัวเอง
-      (pending -> available | failed) จึงมีบางโปรเจ็ค fail ได้โดยไม่กระทบอันอื่น
-    """
-    instance_rec = _resolve_export_instance(payload.instance_id, current_user)
-
-    projects = gns3_service.list_projects(instance_rec)
-    # รับทั้ง project_ids (หลายตัว) และ project_id (ตัวเดียว) กันส่งผิดฟิลด์
-    wanted_ids = list(payload.project_ids or [])
-    if payload.project_id:
-        wanted_ids.append(payload.project_id)
-    # ค่าเริ่มต้น: ถ้าไม่ได้เลือกโปรเจ็คใดเลย = export ทุกโปรเจ็ค
-    # export_all ค่าเริ่มต้นเป็น True: ถ้าไม่ได้ส่ง export_all มาเอง แต่เลือก project_ids ไว้ ให้ export เฉพาะที่เลือก
-    explicit_export_all = "export_all" in payload.model_fields_set and payload.export_all
-    export_all = explicit_export_all or not wanted_ids
-    selected = gns3_service.select_projects(projects, wanted_ids, export_all)
-
-    created = []
-    for project in selected:
-        exercise_id = str(uuid.uuid4())
-        s3_key = s3_service.build_exercise_key(exercise_id)
-        item = create_exercise_record(
-            exercise_id=exercise_id,
-            instructor_id=current_user.user_id,
-            title=f"{payload.title} - {project['name']}",
-            description=payload.description,
-            s3_key=s3_key,
-            project_name=project["name"],
-            status="pending",
-            is_active=True,
-        )
-        background_tasks.add_task(
-            gns3_service.export_exercise_to_s3,
-            exercise_id,
-            instance_rec,
-            project["project_id"],
-            s3_key,
-        )
-        created.append(ExerciseResponse(**item))
-    return ExerciseListResponse(count=len(created), exercises=created)
-
-
 @app.delete("/exercises/{exercise_id}", status_code=200)
 def delete_exercise(
     exercise_id: str,
@@ -373,7 +337,7 @@ def delete_exercise(
     ลบแบบฝึกหัด Lab (Instructor ทุกคน หรือ Admin)
     - terminate VM ทุกเครื่องที่สร้างจากแบบฝึกหัดนี้ (exercise_id เดียวกัน) และคืนโควตาให้เจ้าของ
     - ถ้า terminate VM เครื่องใดไม่สำเร็จ จะยังไม่ลบแบบฝึกหัด (ตอบ 500 แล้วลองใหม่ได้)
-    - จากนั้น De-register AMI (ถ้ามี), ลบไฟล์บน S3 (ถ้ามี) และลบแถวใน DynamoDB
+    - จากนั้น De-register AMI + ลบ snapshot (ถ้ามี), ลบไฟล์สำรองบน S3 (ถ้ามี) และลบแถวใน DynamoDB
     """
     record = get_exercise_record(exercise_id)
     if not record:
@@ -522,6 +486,19 @@ def admin_terminate_all_instances(
         "failed": failed,
         "wait_error": wait_error,
     }
+
+
+@app.post("/admin/images/delete-all")
+def admin_delete_all_images(
+    current_user: UserInDB = Depends(get_current_admin_user),
+):
+    """
+    ลบ AMI (และ EBS snapshot) ทั้งหมดที่ติด tag Project=gns3-cloud (เฉพาะ Admin)
+    ใช้ก่อน terraform destroy หลัง terminate-all เพราะ Terraform ไม่รู้จัก AMI ที่ระบบสร้างเอง
+    - ไม่แตะ AMI หลัก (DEFAULT_AMI_ID)
+    - ไฟล์สำรองบน S3 ไม่ถูกลบ: แบบฝึกหัดที่ยังอยู่ใน DynamoDB จะกู้คืนจาก S3 ให้เองตอนสร้าง VM
+    """
+    return ec2_service.deregister_all_project_images()
 
 
 # ==========================================
