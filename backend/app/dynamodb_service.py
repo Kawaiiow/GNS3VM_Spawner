@@ -519,6 +519,7 @@ def create_exercise_record(
     exercise_id: Optional[str] = None,
     s3_key: Optional[str] = None,
     project_name: Optional[str] = None,
+    project_names: Optional[list[str]] = None,
 ) -> dict:
     table = get_exercises_table()
     exercise_id =  exercise_id or str(uuid.uuid4())
@@ -540,7 +541,10 @@ def create_exercise_record(
     if s3_key:
         item["s3_key"] = s3_key
     if project_name:
-        item["project_name"] = project_name    
+        item["project_name"] = project_name
+    if project_names:
+        item["project_names"] = list(project_names)
+        item["project_count"] = len(project_names)
     try:
         table.put_item(Item=item)
         return item
@@ -618,6 +622,32 @@ def update_exercise_status(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error updating exercise status: {e.response['Error']['Message']}",
+        )
+
+
+def update_exercise_fields(exercise_id: str, fields: dict) -> None:
+    """อัปเดตฟิลด์ทั่วไปของแบบฝึกหัด (เช่น ami_id, s3_key)"""
+    if not fields:
+        return
+    table = get_exercises_table()
+    sets = ["updated_at = :now"]
+    names: dict[str, str] = {}
+    values: dict[str, Any] = {":now": _now_iso()}
+    for idx, (k, v) in enumerate(fields.items()):
+        sets.append(f"#f{idx} = :v{idx}")
+        names[f"#f{idx}"] = k
+        values[f":v{idx}"] = v
+    try:
+        table.update_item(
+            Key={"exercise_id": exercise_id},
+            UpdateExpression="SET " + ", ".join(sets),
+            ExpressionAttributeNames=names,
+            ExpressionAttributeValues=values,
+        )
+    except ClientError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating exercise: {e.response['Error']['Message']}",
         )
 
 
