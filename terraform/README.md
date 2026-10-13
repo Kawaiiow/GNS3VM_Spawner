@@ -94,7 +94,7 @@ cp terraform.tfvars.example terraform.tfvars   # Windows: copy terraform.tfvars.
 แก้ `terraform.tfvars` อย่างน้อย 2 ค่า:
 
 ```hcl
-admin_cidr  = "x.x.x.x/32" #ไม่ค่อยจำเป็น Connect เข้าไปดูในเว็บได้ <optional>
+admin_cidr  = "27.145.145.69/32" #ไม่ค่อยจำเป็น Connect เข้าไปดูในเว็บได้ <require placeholder ip>
 repo_url    = "https://github.com/<owner>/GNS3VM_Spawner.git"   # ห้ามใส่ token ในบรรทัดนี้ <require>
 repo_branch = "your branch" <require>
 # expose_backend_port = true   # เปิด 8000 ถ้า JS ในหน้าเว็บเรียก backend ตรงๆ จากเบราว์เซอร์ <optional>
