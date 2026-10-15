@@ -27,7 +27,7 @@
                     {% elif sb.state not in ["running", "stopped"] %}
                     <p class="bg-gray-600 text-gray-200 px-4 py-3 rounded-xl text-sm">รอสักครู่</p>
                     {% else %}
-                    <form method="POST" action="/instance/delete">
+                    <form method="POST" action="/instance/delete" onsubmit="return confirm('ต้องการลบเครื่องของ sanbox นี้ใช่หรือไม่')">
                         <input type="hidden" name="instance_id" value="{{ sb.instance_id }}">
                         <button type="submit" class="bg-rose-600 hover:bg-rose-700 transition-colors duration-200 ease-in-out text-white px-4 py-3 rounded-xl text-sm">ลบ</button>
                     </form>
@@ -68,7 +68,7 @@
                     {% if ex and ex.state not in ["running", "stopped"] %}
                     <p class="bg-gray-600 text-gray-200 px-4 py-3 rounded-xl text-sm">รอสักครู่</p>
                     {% elif ex %}
-                    <form method="POST" action="/instance/delete">
+                    <form method="POST" action="/instance/delete" onsubmit="return confirm('ต้องการลบเครื่องของแบบฝึกหัดนี้ใช่หรือไม่')">
                         <input type="hidden" name="instance_id" value="{{ ex.instance_id }}">
                         <button type="submit" class="bg-rose-600 hover:bg-rose-700 transition-colors duration-200 ease-in-out text-white px-4 py-3 rounded-xl text-sm">ลบ</button>
                     </form>
