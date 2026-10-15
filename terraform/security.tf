@@ -2,13 +2,13 @@
 #
 # เส้นทางการเข้าถึง (อ้างอิงกันด้วย SG ไม่ใช้ IP เพราะเครื่องมีหลายตัวและเปลี่ยนได้):
 #   Internet -> alb (80) -> frontend (8080)
-#   frontend -> backend_alb (8000, internal) -> backend (8000)
+#   frontend -> alb (8000) -> backend (8000)   (ALB สาธารณะตัวเดียว ไม่มี internal ALB)
 #   นักศึกษา -> VM GNS3 ตรงๆ (3080, 5900-5999) ไม่ผ่าน ALB
 
 # ALB ที่เปิดสู่อินเทอร์เน็ต (หน้าเว็บ)
 resource "aws_security_group" "alb" {
   name        = "${var.project}-tf-alb-sg"
-  description = "NetLab public ALB (HTTP 80)"
+  description = "NetLab public ALB (HTTP 80, backend 8000)"
   vpc_id      = data.aws_vpc.default.id
 
   ingress {
@@ -19,16 +19,14 @@ resource "aws_security_group" "alb" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # ใช้เฉพาะให้ terraform destroy เรียก API ลบ VM/AMI (เปิดเฉพาะ IP admin ไม่เปิดทุกที่)
-  dynamic "ingress" {
-    for_each = var.expose_backend_port ? [1] : []
-    content {
-      description = "Backend API for terraform destroy cleanup (admin only)"
-      from_port   = 8000
-      to_port     = 8000
-      protocol    = "tcp"
-      cidr_blocks = [var.admin_cidr]
-    }
+  # Backend API: frontend เรียกผ่าน DNS ของ ALB สาธารณะ จึงเห็น source เป็น public IP ของเครื่อง
+  # frontend (อ้างด้วย SG ไม่ได้) และ terraform destroy ก็เรียกจากเครื่อง admin ด้วย
+  ingress {
+    description = "Backend API (frontend + terraform destroy cleanup)"
+    from_port   = 8000
+    to_port     = 8000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   egress {
@@ -69,51 +67,18 @@ resource "aws_security_group" "frontend" {
   }
 }
 
-# ALB ภายใน (internal) สำหรับ Backend: รับเฉพาะจากเครื่อง Frontend
-resource "aws_security_group" "backend_alb" {
-  name        = "${var.project}-tf-backend-alb-sg"
-  description = "NetLab internal ALB for backend (8000 from frontend)"
-  vpc_id      = data.aws_vpc.default.id
-
-  ingress {
-    description     = "Backend API from frontend"
-    from_port       = 8000
-    to_port         = 8000
-    protocol        = "tcp"
-    security_groups = [aws_security_group.frontend.id]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-}
-
-# เครื่อง Backend (รับเฉพาะจาก internal ALB)
+# เครื่อง Backend (รับเฉพาะจาก ALB)
 resource "aws_security_group" "backend" {
   name        = "${var.project}-tf-backend-sg"
-  description = "NetLab backend (8000 from internal ALB, SSH admin)"
+  description = "NetLab backend (8000 from ALB, SSH admin)"
   vpc_id      = data.aws_vpc.default.id
 
   ingress {
-    description     = "Backend API from internal ALB"
+    description     = "Backend API from public ALB"
     from_port       = 8000
     to_port         = 8000
     protocol        = "tcp"
-    security_groups = [aws_security_group.backend_alb.id]
-  }
-
-  dynamic "ingress" {
-    for_each = var.expose_backend_port ? [1] : []
-    content {
-      description     = "Backend API from public ALB (terraform destroy cleanup)"
-      from_port       = 8000
-      to_port         = 8000
-      protocol        = "tcp"
-      security_groups = [aws_security_group.alb.id]
-    }
+    security_groups = [aws_security_group.alb.id]
   }
 
   ingress {

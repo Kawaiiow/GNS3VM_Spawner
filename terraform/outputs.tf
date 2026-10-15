@@ -7,9 +7,9 @@ output "alb_dns_name" {
   value = aws_lb.public.dns_name
 }
 
-output "backend_internal_url" {
-  description = "BACKEND_URL ที่ frontend ใช้ (internal ALB เข้าได้เฉพาะใน VPC)"
-  value       = "http://${aws_lb.internal.dns_name}:8000"
+output "backend_url" {
+  description = "BACKEND_URL ที่ frontend ใช้ (ALB สาธารณะ port 8000)"
+  value       = "http://${aws_lb.public.dns_name}:8000"
 }
 
 output "availability_zones_used" {

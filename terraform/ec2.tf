@@ -11,7 +11,7 @@ resource "random_password" "jwt" {
 }
 
 # ---------------------------------------------------------------------------
-# Backend: Launch Template + ASG (กระจายหลาย AZ, อยู่หลัง internal ALB)
+# Backend: Launch Template + ASG (กระจายหลาย AZ, อยู่หลัง ALB สาธารณะ port 8000)
 # ---------------------------------------------------------------------------
 resource "aws_launch_template" "backend" {
   name_prefix   = "${var.project}-tf-backend-"
@@ -120,7 +120,7 @@ resource "aws_autoscaling_group" "backend" {
     propagate_at_launch = true
   }
 
-  depends_on = [aws_lb_listener.internal_backend]
+  depends_on = [aws_lb_listener.public_backend]
 }
 
 # ---------------------------------------------------------------------------
@@ -154,7 +154,7 @@ resource "aws_launch_template" "frontend" {
     repo_url    = var.repo_url
     clone_url   = local.clone_url
     repo_branch = var.repo_branch
-    backend_url = "http://${aws_lb.internal.dns_name}:8000"
+    backend_url = "http://${aws_lb.public.dns_name}:8000"
   }), "\r\n", "\n"))
 
   tag_specifications {
@@ -210,7 +210,7 @@ resource "aws_autoscaling_group" "frontend" {
 # ให้ terminate VM ที่ API สร้างขึ้น (Terraform ไม่รู้จัก) ก่อน แล้วค่อยลบ web / SG gns3_vm
 # ลำดับ destroy: cleanup_lab_vms -> ASG (frontend/backend) + ALB -> SG gns3_vm / DynamoDB
 # (cleanup ต้อง depend on backend ASG เพื่อให้ถูกลบก่อน ตอนที่ API ยังทำงานอยู่)
-# ต้องเข้าถึง backend (port 8000 บน ALB สาธารณะ) จากเครื่องที่รัน terraform ได้ (expose_backend_port = true)
+# ต้องเข้าถึง backend (port 8000 บน ALB สาธารณะ) จากเครื่องที่รัน terraform ได้
 # ถ้าไม่เปิด/เรียก API ไม่ได้ จะ fallback ไปใช้ aws CLI ลบตาม SG ของ VM lab (ถ้ามี aws ใน PATH)
 # หลังลบ VM แล้ว จะลบ AMI ต้นแบบแบบฝึกหัดที่ระบบสร้างเอง (ชื่อ netlab-ex-* / netlab-restore-*, tag Project=gns3-cloud)
 # ผ่าน POST /admin/images/delete-all (fallback: aws CLI) เป็น best-effort ไม่ทำให้ destroy ล้ม
@@ -219,8 +219,7 @@ resource "terraform_data" "cleanup_lab_vms" {
   # destroy-time provisioner อ้างได้เฉพาะ self จึงเก็บค่าที่ต้องใช้ไว้ใน input
   input = {
     region     = var.region
-    # ว่าง = ข้ามขั้นตอนเรียก API แล้วไปใช้ aws CLI fallback เลย (ไม่ต้องรอ timeout)
-    api_base   = var.expose_backend_port ? "http://${aws_lb.public.dns_name}:8000" : ""
+    api_base   = "http://${aws_lb.public.dns_name}:8000"
     sg_id      = aws_security_group.gns3_vm.id
     admin_user = var.admin_username
     admin_pass = var.admin_password
@@ -228,7 +227,7 @@ resource "terraform_data" "cleanup_lab_vms" {
   depends_on = [
     aws_autoscaling_group.backend,
     aws_autoscaling_group.frontend,
-    aws_lb_listener.public_backend_admin,
+    aws_lb_listener.public_backend,
     aws_security_group.gns3_vm,
   ]
 
