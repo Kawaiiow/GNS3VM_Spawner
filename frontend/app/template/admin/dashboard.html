@@ -55,8 +55,9 @@
                     <td class="px-4 py-3 text-center text-gray-800">{{ ex.public_ip if ex and ex.public_ip else "-" }}</td>
                     <td class="px-4 py-3 text-right">
                         <div class="flex justify-end gap-2">
-                            <a href="/admin/account/update/{{ user.user_id }}" class="text-xs px-3 py-2 bg-gray-800 hover:bg-gray-900 transition-colors duration-200 ease-in-out rounded-xl text-white">แก้ไข</a>
-                            <form action="/admin/account/delete/{{ user.user_id }}" method="POST" class="inline">
+                            <a href="/admin/account/update?user_id={{ user.user_id }}" class="text-xs px-3 py-2 bg-gray-800 hover:bg-gray-900 transition-colors duration-200 ease-in-out rounded-xl text-white">แก้ไข</a>
+                            <form method="POST" action="/admin/account/delete" class="inline">
+                                <input type="hidden" name="user_id" value="{{ user.user_id }}">
                                 <button type="submit" class="text-xs px-3 py-2 bg-rose-600 hover:bg-rose-700 transition-colors duration-200 ease-in-out rounded-xl text-white">ลบ</button>
                             </form>
                         </div>

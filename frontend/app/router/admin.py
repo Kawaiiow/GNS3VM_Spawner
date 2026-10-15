@@ -38,7 +38,7 @@ def handle_admin_create_account(request: Request, name: str = Form(...), surname
         return template.TemplateResponse(request=request, name="404.html", status_code=status.HTTP_404_NOT_FOUND)
     return RedirectResponse(url="/admin/dashboard" if response.status_code == 201 else "/admin/account/create", status_code=status.HTTP_303_SEE_OTHER)
 
-@router.get("/account/update/{user_id}")
+@router.get("/account/update")
 def render_admin_update_account(request: Request, user_id: str):
     try:
         response = httpx.get(f"{BACKEND_URL}/admin/users/{user_id}", cookies={"access_token": request.cookies.get("access_token", "")}, timeout=10.0)
@@ -49,18 +49,18 @@ def render_admin_update_account(request: Request, user_id: str):
     name, surname = response.json()["full_name"].split()
     return template.TemplateResponse(request=request, name="admin/update.html", context={"user": response.json(), "name": name, "surname": surname})
 
-@router.post("/account/update/{user_id}")
-def handle_admin_update_account(request: Request, user_id: str, name: str = Form(...), surname: str = Form(...), username: str = Form(...), member_id: str = Form(...), password: str = Form(""), role: str = Form(...)):
+@router.post("/account/update")
+def handle_admin_update_account(request: Request, user_id: str = Form(...), name: str = Form(...), surname: str = Form(...), username: str = Form(...), member_id: str = Form(...), password: str = Form(""), role: str = Form(...)):
     try:
         response = httpx.patch(f"{BACKEND_URL}/admin/users/{user_id}", json={"username": username, "member_id": member_id, "password": password or None, "full_name": f"{name} {surname}", "role": role}, cookies={"access_token": request.cookies.get("access_token", "")}, timeout=10.0)
     except:
         return template.TemplateResponse(request=request, name="503.html", status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
     if response.status_code in (401, 403):
         return template.TemplateResponse(request=request, name="404.html", status_code=status.HTTP_404_NOT_FOUND)
-    return RedirectResponse(url="/admin/dashboard" if response.status_code == 200 else f"/admin/account/update/{user_id}", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url="/admin/dashboard" if response.status_code == 200 else f"/admin/account/update?user_id={user_id}", status_code=status.HTTP_303_SEE_OTHER)
 
-@router.post("/account/delete/{user_id}")
-def handle_admin_delete_account(request: Request, user_id: str):
+@router.post("/account/delete")
+def handle_admin_delete_account(request: Request, user_id: str = Form(...)):
     try:
         response = httpx.delete(f"{BACKEND_URL}/admin/users/{user_id}", cookies={"access_token": request.cookies.get("access_token", "")}, timeout=10.0)
     except:
