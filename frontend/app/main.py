@@ -36,7 +36,7 @@ def handle_signin(request: Request, identifier: str = Form(...), password: str =
     except:
         return template.TemplateResponse(request=request, name="503.html", status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
     if response.status_code in (401, 403):
-        return "ไม่พบบัญชีนี้"
+        return RedirectResponse(url="/signin", status_code=status.HTTP_303_SEE_OTHER)
     data = response.json()
     target = f"/{data['user']['role']}/dashboard" if data["user"]["role"] in ("admin", "instructor") else "/dashboard"
     redirect = RedirectResponse(url=target, status_code=status.HTTP_303_SEE_OTHER)
