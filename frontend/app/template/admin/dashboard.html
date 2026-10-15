@@ -19,7 +19,8 @@
         <div class="bg-white border rounded-lg overflow-x-auto shadow-sm">
             <table class="min-w-lg w-full">
                 <tr class="text-xs text-gray-600 tracking-wide">
-                    <th class="px-4 py-3 text-left">รหัสผู้ใช้</th>
+                    <th class="px-4 py-3 text-left">รหัสประจำตัวผู้ใช้</th>
+                    <th class="px-4 py-3 text-center">ชื่อผู้ใช้</th>
                     <th class="px-4 py-3 text-center">บทบาท</th>
                     <th class="px-4 py-3 text-center">สถานะ Sandbox</th>
                     <th class="px-4 py-3 text-center whitespace-nowrap">ที่อยู่ IP Sandbox</th>
@@ -32,6 +33,7 @@
                 {% set ex = user.instances | selectattr("kind", "equalto", "exercise") | first %}
                 <tr class="border-t">
                     <td class="px-4 py-3 text-left text-gray-800">{{ user.member_id }}</td>
+                    <td class="px-4 py-3 text-center text-gray-800">{{ user.username }}</td>
                     <td class="px-4 py-3 text-center text-gray-800">{{ user.role }}</td>
                     <td class="px-4 py-3 text-center">
                         {% if sb and sb.state == "running" %}
