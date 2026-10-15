@@ -16,3 +16,7 @@
 ## เอกสารคู่มือสำหรับการ Deploy
 - 📖 [คู่มือการติดตั้งและ Deploy Backend บน Amazon ECR และ AWS ECS](backend/README.md#ส่วนที่-2b-การ-deploy-ไปยัง-amazon-ecr-และ-aws-ecs-fargate)
 - 🐳 [Dockerfile สำหรับ Backend](backend/Dockerfile)
+
+## สถาปัตยกรรมการ Deploy บน AWS
+
+- 🏗️ [Terraform: แยก Frontend / Backend กระจายหลาย AZ หลัง ALB (ASG 2 AZ, internal ALB, GNS3 VM)](terraform/README.md)

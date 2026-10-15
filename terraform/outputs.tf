@@ -1,9 +1,28 @@
 output "web_url" {
-  value = "http://${aws_eip.web.public_ip}:8080"
+  description = "URL เปิดเว็บ (ผ่าน ALB สาธารณะ port 80)"
+  value       = "http://${aws_lb.public.dns_name}"
 }
 
-output "web_public_ip" {
-  value = aws_eip.web.public_ip
+output "alb_dns_name" {
+  value = aws_lb.public.dns_name
+}
+
+output "backend_internal_url" {
+  description = "BACKEND_URL ที่ frontend ใช้ (internal ALB เข้าได้เฉพาะใน VPC)"
+  value       = "http://${aws_lb.internal.dns_name}:8000"
+}
+
+output "availability_zones_used" {
+  description = "AZ ที่ ALB / Frontend / Backend กระจายอยู่"
+  value       = local.app_azs
+}
+
+output "frontend_asg_name" {
+  value = aws_autoscaling_group.frontend.name
+}
+
+output "backend_asg_name" {
+  value = aws_autoscaling_group.backend.name
 }
 
 output "gns3_ami_used" {

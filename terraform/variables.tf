@@ -47,9 +47,61 @@ variable "key_name" {
   default     = "vockey"
 }
 
-variable "web_instance_type" {
-  type    = string
-  default = "t3.small"
+variable "frontend_instance_type" {
+  description = "ชนิดเครื่อง Frontend (ต่อ 1 เครื่องใน ASG)"
+  type        = string
+  default     = "t3.small"
+}
+
+variable "backend_instance_type" {
+  description = "ชนิดเครื่อง Backend (ต่อ 1 เครื่องใน ASG)"
+  type        = string
+  default     = "t3.small"
+}
+
+variable "frontend_count" {
+  description = "จำนวนเครื่อง Frontend ใน ASG (ขนาดคงที่ กระจายตาม AZ) อย่างน้อย 2 เพื่อให้ทนการล่มของ AZ"
+  type        = number
+  default     = 2
+
+  validation {
+    condition     = var.frontend_count >= 1
+    error_message = "frontend_count ต้องมากกว่าหรือเท่ากับ 1 (แนะนำ 2 ขึ้นไป)"
+  }
+}
+
+variable "backend_count" {
+  description = "จำนวนเครื่อง Backend ใน ASG (ขนาดคงที่ กระจายตาม AZ) อย่างน้อย 2 เพื่อให้ทนการล่มของ AZ"
+  type        = number
+  default     = 2
+
+  validation {
+    condition     = var.backend_count >= 1
+    error_message = "backend_count ต้องมากกว่าหรือเท่ากับ 1 (แนะนำ 2 ขึ้นไป)"
+  }
+}
+
+variable "az_count" {
+  description = "จำนวน AZ ที่ใช้วาง ALB และเครื่อง Frontend/Backend (เลือก AZ แรกๆ ตามตัวอักษรใน default VPC)"
+  type        = number
+  default     = 2
+
+  validation {
+    condition     = var.az_count >= 2 && var.az_count <= 4
+    error_message = "az_count ต้องอยู่ระหว่าง 2 ถึง 4"
+  }
+}
+
+variable "health_check_grace_period" {
+  description = "วินาทีที่ ASG รอก่อนเริ่มนับ health check ของเครื่องใหม่ (ต้องนานกว่าเวลา clone + docker build ~3-5 นาที)"
+  type        = number
+  default     = 600
+}
+
+variable "alb_idle_timeout" {
+  description = "idle timeout ของ ALB (วินาที) ต้องมากกว่าคำสั่งที่นานที่สุดที่ frontend รอ backend (เช่น start VM ~150 วินาที)"
+  type        = number
+  default     = 600
 }
 
 variable "lab_instance_type" {
@@ -79,7 +131,7 @@ variable "exercises_table" {
 }
 
 variable "expose_backend_port" {
-  description = "เปิด port 8000 (backend API) ให้เบราว์เซอร์เข้าถึงโดยตรง ใช้เมื่อ JavaScript ในหน้าเว็บเรียก API ที่ <host>:8000"
+  description = "เปิด port 8000 (backend API) บน ALB สาธารณะ เฉพาะ admin_cidr เพื่อให้ terraform destroy เรียก API ลบ VM/AMI ที่ระบบสร้าง (ปกติปิดไว้ ถ้าปิดจะใช้ aws CLI fallback ตอน destroy)"
   type        = bool
   default     = false
 }
