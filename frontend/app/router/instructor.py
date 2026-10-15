@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request, Form, status
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import RedirectResponse
-import httpx, os
+from fastapi.responses import RedirectResponse, HTMLResponse
+import httpx, os, json
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
@@ -17,6 +17,10 @@ def render_instructor_dashboard(request: Request):
         return template.TemplateResponse(request=request, name="503.html", status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
     if response.status_code in (401, 403):
         return template.TemplateResponse(request=request, name="404.html", status_code=status.HTTP_404_NOT_FOUND)
+    if response.status_code != 200:
+        return HTMLResponse("<script>alert(" + json.dumps(f"{response.text}").replace("<", "\\u003c") + ");</script>")
+    if exercises.status_code != 200:
+        return HTMLResponse("<script>alert(" + json.dumps(f"[{exercises.status_code}] {exercises.text}").replace("<", "\\u003c") + ");</script>")
     return template.TemplateResponse(request=request, name="instructor/dashboard.html", context={"user": response.json(), "exercises": exercises.json()["exercises"]})
 
 @router.post("/instance/create")
@@ -25,8 +29,8 @@ def handle_instructor_create_instance(request: Request, exercise_id: str = Form(
         response = httpx.post(f"{BACKEND_URL}/instances", json={"instance_name": f"gns3-{request.cookies.get('username')}-{'exercise' if exercise_id else 'sandbox'}", "exercise_id": exercise_id}, cookies={"access_token": request.cookies.get("access_token", "")}, timeout=10.0)
     except:
         return template.TemplateResponse(request=request, name="503.html", status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
-    if response.status_code in (401, 403):
-        return template.TemplateResponse(request=request, name="404.html", status_code=status.HTTP_404_NOT_FOUND)
+    if response.status_code != 201:
+        return HTMLResponse("<script>alert(" + json.dumps(f"{response.text}").replace("<", "\\u003c") + ");location.href='/instructor/dashboard';</script>")
     return RedirectResponse(url="/instructor/dashboard", status_code=status.HTTP_303_SEE_OTHER)
 
 @router.post("/instance/start")
@@ -35,8 +39,8 @@ def handle_instructor_start_instance(request: Request, instance_id: str = Form(.
         response = httpx.post(f"{BACKEND_URL}/instances/{instance_id}/start", cookies={"access_token": request.cookies.get("access_token", "")}, timeout=150.0)
     except:
         return template.TemplateResponse(request=request, name="503.html", status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
-    if response.status_code in (401, 403):
-        return template.TemplateResponse(request=request, name="404.html", status_code=status.HTTP_404_NOT_FOUND)
+    if response.status_code != 200:
+        return HTMLResponse("<script>alert(" + json.dumps(f"{response.text}").replace("<", "\\u003c") + ");location.href='/instructor/dashboard';</script>")
     return RedirectResponse(url="/instructor/dashboard", status_code=status.HTTP_303_SEE_OTHER)
 
 @router.post("/instance/stop")
@@ -45,8 +49,8 @@ def handle_instructor_stop_instance(request: Request, instance_id: str = Form(..
         response = httpx.post(f"{BACKEND_URL}/instances/{instance_id}/stop", cookies={"access_token": request.cookies.get("access_token", "")}, timeout=10.0)
     except:
         return template.TemplateResponse(request=request, name="503.html", status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
-    if response.status_code in (401, 403):
-        return template.TemplateResponse(request=request, name="404.html", status_code=status.HTTP_404_NOT_FOUND)
+    if response.status_code != 200:
+        return HTMLResponse("<script>alert(" + json.dumps(f"{response.text}").replace("<", "\\u003c") + ");location.href='/instructor/dashboard';</script>")
     return RedirectResponse(url="/instructor/dashboard", status_code=status.HTTP_303_SEE_OTHER)
 
 @router.post("/instance/delete")
@@ -55,8 +59,8 @@ def handle_instructor_delete_instance(request: Request, instance_id: str = Form(
         response = httpx.delete(f"{BACKEND_URL}/instances/{instance_id}", cookies={"access_token": request.cookies.get("access_token", "")}, timeout=10.0)
     except:
         return template.TemplateResponse(request=request, name="503.html", status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
-    if response.status_code in (401, 403):
-        return template.TemplateResponse(request=request, name="404.html", status_code=status.HTTP_404_NOT_FOUND)
+    if response.status_code != 200:
+        return HTMLResponse("<script>alert(" + json.dumps(f"{response.text}").replace("<", "\\u003c") + ");location.href='/instructor/dashboard';</script>")
     return RedirectResponse(url="/instructor/dashboard", status_code=status.HTTP_303_SEE_OTHER)
 
 @router.get("/exercise/create")
@@ -67,6 +71,8 @@ def render_instructor_create_exercise(request: Request, instance_id: str):
         return template.TemplateResponse(request=request, name="503.html", status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
     if response.status_code in (401, 403):
         return template.TemplateResponse(request=request, name="404.html", status_code=status.HTTP_404_NOT_FOUND)
+    if response.status_code != 200:
+        return HTMLResponse("<script>alert(" + json.dumps(f"{response.text}").replace("<", "\\u003c") + ");location.href='/instructor/dashboard';</script>")
     return template.TemplateResponse(request=request, name="instructor/create.html", context={"instance_id": instance_id, "projects": response.json()["projects"]})
 
 @router.post("/exercise/create")
@@ -75,8 +81,8 @@ def handle_instructor_create_exercise(request: Request, instance_id: str = Form(
         response = httpx.post(f"{BACKEND_URL}/exercises", json={"instance_id": instance_id, "title": title, "description": description, "description": description, "project_ids": project_ids}, cookies={"access_token": request.cookies.get("access_token", "")}, timeout=10.0)
     except:
         return template.TemplateResponse(request=request, name="503.html", status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
-    if response.status_code in (401, 403):
-        return template.TemplateResponse(request=request, name="404.html", status_code=status.HTTP_404_NOT_FOUND)
+    if response.status_code != 201:
+        return HTMLResponse("<script>alert(" + json.dumps(f"{response.text}").replace("<", "\\u003c") + ");history.back();</script>")
     return RedirectResponse(url="/instructor/dashboard", status_code=status.HTTP_303_SEE_OTHER)
 
 @router.post("/exercise/delete")
@@ -85,6 +91,6 @@ def handle_instructor_delete_exercise(request: Request, exercise_id: str = Form(
         response = httpx.delete(f"{BACKEND_URL}/exercises/{exercise_id}", cookies={"access_token": request.cookies.get("access_token", "")}, timeout=10.0)
     except:
         return template.TemplateResponse(request=request, name="503.html", status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
-    if response.status_code in (401, 403):
-        return template.TemplateResponse(request=request, name="404.html", status_code=status.HTTP_404_NOT_FOUND)
+    if response.status_code != 200:
+        return HTMLResponse("<script>alert(" + json.dumps(f"{response.text}").replace("<", "\\u003c") + ");location.href='/instructor/dashboard';</script>")
     return RedirectResponse(url="/instructor/dashboard", status_code=status.HTTP_303_SEE_OTHER)
