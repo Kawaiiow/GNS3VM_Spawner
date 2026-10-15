@@ -29,8 +29,8 @@ def handle_student_create_instance(request: Request, exercise_id: str = Form(Non
         return template.TemplateResponse(request=request, name="404.html", status_code=status.HTTP_404_NOT_FOUND)
     return RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
 
-@router.post("/instance/start/{instance_id}")
-def handle_student_start_instance(request: Request, instance_id: str):
+@router.post("/instance/start")
+def handle_student_start_instance(request: Request, instance_id: str = Form(...)):
     try:
         response = httpx.post(f"{BACKEND_URL}/instances/{instance_id}/start", cookies={"access_token": request.cookies.get("access_token", "")}, timeout=150.0)
     except:
@@ -39,8 +39,8 @@ def handle_student_start_instance(request: Request, instance_id: str):
         return template.TemplateResponse(request=request, name="404.html", status_code=status.HTTP_404_NOT_FOUND)
     return RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
 
-@router.post("/instance/stop/{instance_id}")
-def handle_student_stop_instance(request: Request, instance_id: str):
+@router.post("/instance/stop")
+def handle_student_stop_instance(request: Request, instance_id: str = Form(...)):
     try:
         response = httpx.post(f"{BACKEND_URL}/instances/{instance_id}/stop", cookies={"access_token": request.cookies.get("access_token", "")}, timeout=10.0)
     except:
@@ -49,8 +49,8 @@ def handle_student_stop_instance(request: Request, instance_id: str):
         return template.TemplateResponse(request=request, name="404.html", status_code=status.HTTP_404_NOT_FOUND)
     return RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
 
-@router.post("/instance/delete/{instance_id}")
-def handle_student_delete_instance(request: Request, instance_id: str):
+@router.post("/instance/delete")
+def handle_student_delete_instance(request: Request, instance_id: str = Form(...)):
     try:
         response = httpx.delete(f"{BACKEND_URL}/instances/{instance_id}", cookies={"access_token": request.cookies.get("access_token", "")}, timeout=10.0)
     except:
