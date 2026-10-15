@@ -56,10 +56,14 @@
                     <td class="px-4 py-3 text-right">
                         <div class="flex justify-end gap-2">
                             <a href="/admin/account/update?user_id={{ user.user_id }}" class="text-xs px-3 py-2 bg-gray-800 hover:bg-gray-900 transition-colors duration-200 ease-in-out rounded-xl text-white">แก้ไข</a>
+                            {% if user.username == request.cookies.get("username") %}
+                            <p class="text-xs px-3 py-2 bg-gray-600 rounded-xl text-gray-200">ลบ</p>
+                            {% else %}
                             <form method="POST" action="/admin/account/delete" class="inline" onsubmit="return confirm('ต้องการลบบัญชีนี้ใช่หรือไม่')">
                                 <input type="hidden" name="user_id" value="{{ user.user_id }}">
                                 <button type="submit" class="text-xs px-3 py-2 bg-rose-600 hover:bg-rose-700 transition-colors duration-200 ease-in-out rounded-xl text-white">ลบ</button>
                             </form>
+                            {% endif %}
                         </div>
                     </td>
                 </tr>
