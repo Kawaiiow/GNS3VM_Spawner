@@ -8,7 +8,7 @@
             <div class="absolute right-0 top-full mt-6 w-48 bg-white border rounded-lg shadow-sm p-2 hidden peer-checked:block">
                 <a href="/profile" class="block w-full px-4 py-2 text-gray-800 hover:text-gray-900 transition-colors duration-200 ease-in-out text-sm">โปรไฟล์</a>
                 <hr class="my-2">
-                <form action="/signout" method="POST">
+                <form method="POST" action="/signout" onsubmit="return confirm('ต้องการออกจากระบบใช่หรือไม่')">
                     <button type="submit" class="block w-full px-4 py-2 text-rose-600 hover:text-rose-700 transition-colors duration-200 ease-in-out text-left text-sm">ออกจากระบบ</button>
                 </form>
             </div>

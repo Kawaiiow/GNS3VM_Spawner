@@ -14,12 +14,13 @@
                 <p class="text-gray-800 text-2xl">รายชื่อบัญชีทั้งหมด</p>
                 <p class="text-gray-600 text-base">เพิ่ม แก้ไข และลบบัญชีของผู้ใช้แต่ละคนในระบบ</p>
             </div>
-            <a href="/admin/create" class="bg-gray-800 hover:bg-gray-900 transition-colors duration-200 ease-in-out text-white px-4 py-3 rounded-xl text-sm">เพิ่มบัญชี</a>
+            <a href="/admin/account/create" class="bg-gray-800 hover:bg-gray-900 transition-colors duration-200 ease-in-out text-white px-4 py-3 rounded-xl text-sm">เพิ่มบัญชี</a>
         </div>
         <div class="bg-white border rounded-lg overflow-x-auto shadow-sm">
             <table class="min-w-lg w-full">
                 <tr class="text-xs text-gray-600 tracking-wide">
-                    <th class="px-4 py-3 text-left">รหัสผู้ใช้</th>
+                    <th class="px-4 py-3 text-left">รหัสประจำตัวผู้ใช้</th>
+                    <th class="px-4 py-3 text-center">ชื่อผู้ใช้</th>
                     <th class="px-4 py-3 text-center">บทบาท</th>
                     <th class="px-4 py-3 text-center">สถานะ Sandbox</th>
                     <th class="px-4 py-3 text-center whitespace-nowrap">ที่อยู่ IP Sandbox</th>
@@ -32,6 +33,7 @@
                 {% set ex = user.instances | selectattr("kind", "equalto", "exercise") | first %}
                 <tr class="border-t">
                     <td class="px-4 py-3 text-left text-gray-800">{{ user.member_id }}</td>
+                    <td class="px-4 py-3 text-center text-gray-800">{{ user.username }}</td>
                     <td class="px-4 py-3 text-center text-gray-800">{{ user.role }}</td>
                     <td class="px-4 py-3 text-center">
                         {% if sb and sb.state == "running" %}
@@ -55,10 +57,15 @@
                     <td class="px-4 py-3 text-center text-gray-800">{{ ex.public_ip if ex and ex.public_ip else "-" }}</td>
                     <td class="px-4 py-3 text-right">
                         <div class="flex justify-end gap-2">
-                            <a href="/admin/update/{{ user.user_id }}" class="text-xs px-3 py-2 bg-gray-800 hover:bg-gray-900 transition-colors duration-200 ease-in-out rounded-xl text-white">แก้ไข</a>
-                            <form action="/admin/delete/{{ user.user_id }}" method="POST" class="inline">
+                            <a href="/admin/account/update?user_id={{ user.user_id }}" class="text-xs px-3 py-2 bg-gray-800 hover:bg-gray-900 transition-colors duration-200 ease-in-out rounded-xl text-white">แก้ไข</a>
+                            {% if user.username == request.cookies.get("username") %}
+                            <p class="text-xs px-3 py-2 bg-gray-600 rounded-xl text-gray-200">ลบ</p>
+                            {% else %}
+                            <form method="POST" action="/admin/account/delete" class="inline" onsubmit="return confirm('ต้องการลบบัญชีนี้ใช่หรือไม่')">
+                                <input type="hidden" name="user_id" value="{{ user.user_id }}">
                                 <button type="submit" class="text-xs px-3 py-2 bg-rose-600 hover:bg-rose-700 transition-colors duration-200 ease-in-out rounded-xl text-white">ลบ</button>
                             </form>
+                            {% endif %}
                         </div>
                     </td>
                 </tr>

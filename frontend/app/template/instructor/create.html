@@ -12,7 +12,7 @@
             <p class="text-2xl text-gray-800">เพิ่มแบบฝึกหัด</p>
             <p class="text-base text-gray-600 mb-6">เพิ่มแบบฝึกหัดใน NetLab</p>
         </div>
-        <form action="/instructor/exercise/create" method="POST">
+        <form method="POST" action="/instructor/exercise/create">
             <input type="hidden" name="instance_id" value="{{ instance_id }}">
             <div class="mb-4">
                 <label class="block text-sm text-gray-800 mb-2">หัวข้อ</label>

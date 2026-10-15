@@ -39,11 +39,7 @@ cd app
 ### 5. Run the frontend
 
 ```bash
-# macOS / Linux
-python3 main.py
-
-# Windows
-python main.py
+uvicorn main:app --host 0.0.0.0 --port 8080
 ```
 
 ### 6. Open in browser

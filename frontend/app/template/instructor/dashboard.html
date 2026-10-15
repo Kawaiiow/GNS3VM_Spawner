@@ -21,11 +21,16 @@
                         <p class="text-gray-600 text-sm">เครื่องเปล่าสำหรับทดลองด้วยตัวเอง</p>
                     </div>
                     {% if not sb %}
-                    <form action="/instructor/instance/create" method="POST">
+                    <form method="POST" action="/instructor/instance/create">
                         <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 transition-colors duration-200 ease-in-out text-white px-4 py-3 rounded-xl text-sm">เพิ่ม</button>
                     </form>
                     {% elif sb.state not in ["running", "stopped"] %}
-                    <p class="bg-gray-600 text-gray-200 px-4 py-3 rounded-xl text-sm">รอ...</p>
+                    <p class="bg-gray-600 text-gray-200 px-4 py-3 rounded-xl text-sm">รอสักครู่</p>
+                    {% else %}
+                    <form method="POST" action="/instructor/instance/delete" onsubmit="return confirm('ต้องการลบเครื่องของ sanbox นี้ใช่หรือไม่')">
+                        <input type="hidden" name="instance_id" value="{{ sb.instance_id }}">
+                        <button type="submit" class="bg-rose-600 hover:bg-rose-700 transition-colors duration-200 ease-in-out text-white px-4 py-3 rounded-xl text-sm">ลบ</button>
+                    </form>
                     {% endif %}
                 </div>
                 {% if sb and sb.state in ["running", "stopped"] %}
@@ -43,15 +48,13 @@
                     <p class="text-gray-800 text-lg">{{ sb.gns3_password }}</p>
                 </div>
                 <div class="flex gap-2">
-                    <form action="/instructor/instance/{{ 'stop' if sb.state == 'running' else 'start' }}/{{ sb.instance_id }}" method="POST" class="w-full">
+                    <form method="POST" action="/instructor/instance/{{ 'stop' if sb.state == 'running' else 'start' }}" class="w-full">
+                        <input type="hidden" name="instance_id" value="{{ sb.instance_id }}">
                         {% if sb.state == "running" %}
                         <button type="submit" class="w-full text-xs px-3 py-2 bg-amber-500 hover:bg-yellow-600 transition-colors duration-200 ease-in-out rounded-xl text-white">หยุด</button>
                         {% else %}
                         <button type="submit" class="w-full text-xs px-3 py-2 bg-emerald-600 hover:bg-emerald-700 transition-colors duration-200 ease-in-out rounded-xl text-white">เริ่ม</button>
                         {% endif %}
-                    </form>
-                    <form action="/instructor/instance/delete/{{ sb.instance_id }}" method="POST" class="w-full">
-                        <button type="submit" class="w-full text-xs px-3 py-2 bg-rose-600 hover:bg-rose-700 transition-colors duration-200 ease-in-out rounded-xl text-white">ลบ</button>
                     </form>
                 </div>
                 {% endif %}
@@ -63,7 +66,12 @@
                         <p class="text-gray-600 text-sm">เครื่องที่เตรียมโจทย์ไว้ให้</p>
                     </div>
                     {% if ex and ex.state not in ["running", "stopped"] %}
-                    <p class="bg-gray-600 text-gray-200 px-4 py-3 rounded-xl text-sm">รอ...</p>
+                    <p class="bg-gray-600 text-gray-200 px-4 py-3 rounded-xl text-sm">รอสักครู่</p>
+                    {% elif ex %}
+                    <form method="POST" action="/instructor/instance/delete" onsubmit="return confirm('ต้องการลบเครื่องของแบบฝึกหัดนี้ใช่หรือไม่')">
+                        <input type="hidden" name="instance_id" value="{{ ex.instance_id }}">
+                        <button type="submit" class="bg-rose-600 hover:bg-rose-700 transition-colors duration-200 ease-in-out text-white px-4 py-3 rounded-xl text-sm">ลบ</button>
+                    </form>
                     {% endif %}
                 </div>
                 {% if ex and ex.state in ["running", "stopped"] %}
@@ -81,15 +89,13 @@
                     <p class="text-gray-800 text-lg">{{ ex.gns3_password }}</p>
                 </div>
                 <div class="flex gap-2">
-                    <form action="/instructor/instance/{{ 'stop' if ex.state == 'running' else 'start' }}/{{ ex.instance_id }}" method="POST" class="w-full">
+                    <form method="POST" action="/instructor/instance/{{ 'stop' if ex.state == 'running' else 'start' }}" class="w-full">
+                        <input type="hidden" name="instance_id" value="{{ ex.instance_id }}">
                         {% if ex.state == "running" %}
                         <button type="submit" class="w-full text-xs px-3 py-2 bg-amber-500 hover:bg-yellow-600 transition-colors duration-200 ease-in-out rounded-xl text-white">หยุด</button>
                         {% else %}
                         <button type="submit" class="w-full text-xs px-3 py-2 bg-emerald-600 hover:bg-emerald-700 transition-colors duration-200 ease-in-out rounded-xl text-white">เริ่ม</button>
                         {% endif %}
-                    </form>
-                    <form action="/instructor/instance/delete/{{ ex.instance_id }}" method="POST" class="w-full">
-                        <button type="submit" class="w-full text-xs px-3 py-2 bg-rose-600 hover:bg-rose-700 transition-colors duration-200 ease-in-out rounded-xl text-white">ลบ</button>
                     </form>
                 </div>
                 {% endif %}
@@ -120,14 +126,15 @@
                     <td class="px-4 py-3 text-right">
                         <div class="flex justify-end gap-2">
                             {% if exercise.status != "failed" and not ex %}
-                            <form action="/instructor/instance/create" method="POST" class="inline">
+                            <form method="POST" action="/instructor/instance/create" class="inline">
                                 <input type="hidden" name="exercise_id" value="{{ exercise.exercise_id }}">
                                 <button type="submit" class="text-xs px-3 py-2 bg-emerald-600 hover:bg-emerald-700 transition-colors duration-200 ease-in-out rounded-xl text-white">ทำ</button>
                             </form>
                             {% else %}
                             <p class="text-xs px-3 py-2 bg-gray-600 rounded-xl text-gray-200">ทำ</p>
                             {% endif %}
-                            <form action="/instructor/exercise/delete/{{ exercise.exercise_id }}" method="POST" class="inline">
+                            <form method="POST" action="/instructor/exercise/delete" class="inline" onsubmit="return confirm('ต้องการลบแบบฝึกหัดชุดนี้ใช่หรือไม่')">
+                                <input type="hidden" name="exercise_id" value="{{ exercise.exercise_id }}">
                                 <button type="submit" class="text-xs px-3 py-2 bg-rose-600 hover:bg-rose-700 transition-colors duration-200 ease-in-out rounded-xl text-white">ลบ</button>
                             </form>
                         </div>

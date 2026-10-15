@@ -1,9 +1,9 @@
 from fastapi import FastAPI, Request, Form, status
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, HTMLResponse
 from router import student, instructor, admin
-import uvicorn, httpx, os
+import httpx, os
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
@@ -29,14 +29,12 @@ def render_signin(request: Request):
 
 @app.post("/signin")
 def handle_signin(request: Request, identifier: str = Form(...), password: str = Form(...)):
-    if request.cookies.get("access_token"):
-        return template.TemplateResponse(request=request, name="404.html", status_code=status.HTTP_404_NOT_FOUND)
     try:
         response = httpx.post(f"{BACKEND_URL}/auth/login", json={"identifier": identifier, "password": password}, timeout=10.0)
     except:
         return template.TemplateResponse(request=request, name="503.html", status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
-    if response.status_code in (401, 403):
-        return "ไม่พบบัญชีนี้"
+    if response.status_code != 200:
+        return HTMLResponse("<script>alert('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');location.href='/signin';</script>")
     data = response.json()
     target = f"/{data['user']['role']}/dashboard" if data["user"]["role"] in ("admin", "instructor") else "/dashboard"
     redirect = RedirectResponse(url=target, status_code=status.HTTP_303_SEE_OTHER)
@@ -47,12 +45,14 @@ def handle_signin(request: Request, identifier: str = Form(...), password: str =
 
 @app.get("/profile")
 def render_profile(request: Request):
-    if not request.cookies.get("access_token"):
-        return template.TemplateResponse(request=request, name="404.html", status_code=status.HTTP_404_NOT_FOUND)
     try:
         response = httpx.get(f"{BACKEND_URL}/auth/me", cookies={"access_token": request.cookies.get("access_token")}, timeout=10.0)
     except:
         return template.TemplateResponse(request=request, name="503.html", status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+    if response.status_code in (401, 403):
+        return template.TemplateResponse(request=request, name="404.html", status_code=status.HTTP_404_NOT_FOUND)
+    if response.status_code != 200:
+        return HTMLResponse("<script>alert('ไม่สามารถโหลดข้อมูลโปรไฟล์ได้');location.href='/';</script>")
     return template.TemplateResponse(request=request, name="profile.html", context={"user": response.json()})
 
 app.include_router(student.router)
@@ -61,12 +61,12 @@ app.include_router(admin.router, prefix="/admin")
 
 @app.post("/signout")
 def handle_signout(request: Request):
-    if not request.cookies.get("access_token"):
-        return template.TemplateResponse(request=request, name="404.html", status_code=status.HTTP_404_NOT_FOUND)
     try:
-        httpx.post(f"{BACKEND_URL}/auth/logout", cookies={"access_token": request.cookies.get("access_token")}, timeout=10.0)
+        response = httpx.post(f"{BACKEND_URL}/auth/logout", cookies={"access_token": request.cookies.get("access_token")}, timeout=10.0)
     except:
         return template.TemplateResponse(request=request, name="503.html", status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+    if response.status_code != 200:
+        return HTMLResponse("<script>alert('ออกจากระบบไม่สำเร็จ');location.href='/';</script>")
     redirect = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
     redirect.delete_cookie("access_token")
     redirect.delete_cookie("username")
@@ -76,6 +76,3 @@ def handle_signout(request: Request):
 @app.api_route("/{path:path}", methods=["GET", "POST"])
 def catch_all(request: Request):
     return template.TemplateResponse(request=request, name="404.html", status_code=status.HTTP_404_NOT_FOUND)
-
-if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8080, reload=True)

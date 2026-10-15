@@ -12,7 +12,7 @@
             <p class="text-2xl text-gray-800">เพิ่มบัญชี</p>
             <p class="text-base text-gray-600 mb-6">เพิ่มบัญชีใน NetLab</p>
         </div>
-        <form action="/admin/create" method="POST">
+        <form method="POST" action="/admin/account/create">
             <div class="mb-4">
                 <label class="block text-sm text-gray-800 mb-2">ชื่อจริง</label>
                 <input type="text" name="name" placeholder="กรอกชื่อจริง" required class="w-full bg-white border rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-600"/>
@@ -32,7 +32,7 @@
             <div class="mb-4">
                 <label class="block text-sm text-gray-800 mb-2">รหัสผ่าน</label>
                 <div class="relative">
-                    <input type="password" id="password" name="password" placeholder="กรอกรหัสผ่าน" required class="w-full bg-white border rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-600"/>
+                    <input type="password" id="password" name="password" placeholder="กรอกรหัสผ่าน (อย่างน้อย 6 ตัวอักษร)" required class="w-full bg-white border rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-600"/>
                     <button type="button" onclick="togglePassword()" class="absolute inset-y-0 right-0 pr-3 flex items-center"><img id="eye-icon" src="/static/image/eye_open.svg" class="max-h-full w-auto"></button>
                 </div>
             </div>
