@@ -29,8 +29,8 @@ def handle_instructor_create_instance(request: Request, exercise_id: str = Form(
         return template.TemplateResponse(request=request, name="404.html", status_code=status.HTTP_404_NOT_FOUND)
     return RedirectResponse(url="/instructor/dashboard", status_code=status.HTTP_303_SEE_OTHER)
 
-@router.post("/instance/start/{instance_id}")
-def handle_instructor_start_instance(request: Request, instance_id: str):
+@router.post("/instance/start")
+def handle_instructor_start_instance(request: Request, instance_id: str = Form(...)):
     try:
         response = httpx.post(f"{BACKEND_URL}/instances/{instance_id}/start", cookies={"access_token": request.cookies.get("access_token", "")}, timeout=150.0)
     except:
@@ -39,8 +39,8 @@ def handle_instructor_start_instance(request: Request, instance_id: str):
         return template.TemplateResponse(request=request, name="404.html", status_code=status.HTTP_404_NOT_FOUND)
     return RedirectResponse(url="/instructor/dashboard", status_code=status.HTTP_303_SEE_OTHER)
 
-@router.post("/instance/stop/{instance_id}")
-def handle_instructor_stop_instance(request: Request, instance_id: str):
+@router.post("/instance/stop")
+def handle_instructor_stop_instance(request: Request, instance_id: str = Form(...)):
     try:
         response = httpx.post(f"{BACKEND_URL}/instances/{instance_id}/stop", cookies={"access_token": request.cookies.get("access_token", "")}, timeout=10.0)
     except:
@@ -49,8 +49,8 @@ def handle_instructor_stop_instance(request: Request, instance_id: str):
         return template.TemplateResponse(request=request, name="404.html", status_code=status.HTTP_404_NOT_FOUND)
     return RedirectResponse(url="/instructor/dashboard", status_code=status.HTTP_303_SEE_OTHER)
 
-@router.post("/instance/delete/{instance_id}")
-def handle_instructor_delete_instance(request: Request, instance_id: str):
+@router.post("/instance/delete")
+def handle_instructor_delete_instance(request: Request, instance_id: str = Form(...)):
     try:
         response = httpx.delete(f"{BACKEND_URL}/instances/{instance_id}", cookies={"access_token": request.cookies.get("access_token", "")}, timeout=10.0)
     except:
@@ -79,8 +79,8 @@ def handle_instructor_create_exercise(request: Request, instance_id: str = Form(
         return template.TemplateResponse(request=request, name="404.html", status_code=status.HTTP_404_NOT_FOUND)
     return RedirectResponse(url="/instructor/dashboard", status_code=status.HTTP_303_SEE_OTHER)
 
-@router.post("/exercise/delete/{exercise_id}")
-def handle_instructor_delete_exercise(request: Request, exercise_id: str):
+@router.post("/exercise/delete")
+def handle_instructor_delete_exercise(request: Request, exercise_id: str = Form(...)):
     try:
         response = httpx.delete(f"{BACKEND_URL}/exercises/{exercise_id}", cookies={"access_token": request.cookies.get("access_token", "")}, timeout=10.0)
     except:
