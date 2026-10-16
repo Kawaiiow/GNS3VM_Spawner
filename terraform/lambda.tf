@@ -8,7 +8,7 @@
 variable "auto_stop_check_minutes" {
   description = "ความถี่ที่ Lambda ตรวจ VM ที่หมดเวลา (นาที) ยิ่งน้อยยิ่งปิดตรงเวลา"
   type        = number
-  default     = 5
+  default     = 1 # เปลี่ยนเวลาตรวจเช็ค Stop Instance ทุกๆ n นาที ยิ่งน้อยยิ่งเสียตังเยอะ
 
   validation {
     condition     = var.auto_stop_check_minutes >= 1 && var.auto_stop_check_minutes == floor(var.auto_stop_check_minutes)

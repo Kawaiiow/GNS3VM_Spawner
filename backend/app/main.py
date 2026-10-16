@@ -477,10 +477,10 @@ def extend_instance_timer(
 def set_instance_timer(
     instance_id: str,
     payload: SetTimerRequest,
-    current_user: UserInDB = Depends(get_current_instructor_or_admin),
+    current_user: UserInDB = Depends(get_current_admin_user),
 ):
     """
-    ตั้งเวลาที่เหลือก่อน auto-stop ของ VM รายเครื่อง (เฉพาะ Instructor/Admin)
+    ตั้งเวลาที่เหลือก่อน auto-stop ของ VM รายเครื่อง (เฉพาะ Admin)
     - minutes = เวลาที่เหลือ นับจากตอนเรียก API (ไม่ใช่บวกเพิ่ม) ขั้นต่ำ 1 นาที สูงสุดตาม AUTO_STOP_MAX_HOURS (24 ชม.)
     - ใช้ได้กับ VM ของ student ที่กำลัง running/pending เท่านั้น
     - ไม่ตรวจความเป็นเจ้าของ: อาจารย์/แอดมินตั้งให้ VM ของนักศึกษาคนไหนก็ได้
