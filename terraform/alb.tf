@@ -1,6 +1,6 @@
 # ---------- ALB สาธารณะ -> Frontend (2 AZ) ----------
 resource "aws_lb" "public" {
-  name               = "${var.project}"
+  name               = var.project
   load_balancer_type = "application"
   internal           = false
   security_groups    = [aws_security_group.alb.id]
