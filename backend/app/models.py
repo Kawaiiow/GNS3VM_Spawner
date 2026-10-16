@@ -165,6 +165,12 @@ class InstanceActionResponse(BaseModel):
     public_ip: Optional[str] = None
 
 
+class SetTimerRequest(BaseModel):
+    minutes: int = Field(
+        ..., ge=1, description="เวลาที่เหลือก่อน VM ถูก stop (นาที) นับจากตอนที่เรียก API"
+    )
+
+
 class ExtendTimerResponse(BaseModel):
     instance_id: str
     expires_at: int = Field(..., description="เวลาที่ระบบจะ stop VM (epoch วินาที, UTC)")

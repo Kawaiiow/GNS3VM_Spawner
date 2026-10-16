@@ -632,9 +632,9 @@ def stop_instance(instance_id: str) -> dict:
     }
 
 
-def extend_instance(instance_id: str) -> dict:
+def _apply_timer(instance_id: str, seconds: int, message: str) -> dict:
     """
-    รีเวลา auto-stop กลับเป็น AUTO_STOP_HOURS (4 ชม.) นับจากตอนนี้
+    ตั้งเวลา auto-stop = ตอนนี้ + seconds (ใช้ร่วมกันระหว่าง extend และ set timer)
     ใช้ได้เฉพาะ VM ที่จับเวลาอยู่ (student) และกำลัง running/pending
     """
     rec = get_instance_record(instance_id)
@@ -652,17 +652,36 @@ def extend_instance(instance_id: str) -> dict:
     if state not in ("running", "pending"):
         raise HTTPException(
             status_code=400,
-            detail=f"VM ไม่ได้ทำงานอยู่ (สถานะ: {state}) กรุณากด start ก่อน เวลาจะเริ่มนับใหม่ให้เอง",
+            detail=f"VM ไม่ได้ทำงานอยู่ (สถานะ: {state}) ต้อง start ก่อน เวลาจะเริ่มนับใหม่ให้เอง",
         )
 
-    new_exp = _new_expiry()
+    new_exp = int(time.time()) + seconds
     set_instance_expiry(instance_id, new_exp)
     return {
         "instance_id": instance_id,
         "expires_at": new_exp,
-        "remaining_seconds": _auto_stop_seconds(),
-        "message": "รีเวลาเรียบร้อย",
+        "remaining_seconds": seconds,
+        "message": message,
     }
+
+
+def extend_instance(instance_id: str) -> dict:
+    """รีเวลา auto-stop กลับเป็น AUTO_STOP_HOURS (4 ชม.) นับจากตอนนี้"""
+    return _apply_timer(instance_id, _auto_stop_seconds(), "รีเวลาเรียบร้อย")
+
+
+def set_instance_timer(instance_id: str, minutes: int) -> dict:
+    """
+    ตั้งเวลาที่เหลือของ VM รายเครื่อง (สำหรับ admin/instructor) เป็น `minutes` นาที นับจากตอนนี้
+    จำกัดไม่เกิน AUTO_STOP_MAX_HOURS
+    """
+    max_minutes = int(get_settings().auto_stop_max_hours * 60)
+    if minutes < 1 or minutes > max_minutes:
+        raise HTTPException(
+            status_code=400,
+            detail=f"minutes ต้องอยู่ระหว่าง 1 ถึง {max_minutes} นาที",
+        )
+    return _apply_timer(instance_id, minutes * 60, f"ตั้งเวลาเหลือ {minutes} นาทีเรียบร้อย")
 
 
 def is_slot_limited(role: Optional[str], slot: str) -> bool:

@@ -46,6 +46,7 @@ from app.models import (
     InstanceListResponse,
     LaunchInstanceRequest,
     LoginRequest,
+    SetTimerRequest,
     TokenResponse,
     UserCreate,
     UserInDB,
@@ -470,6 +471,21 @@ def extend_instance_timer(
     """
     _verify_instance_ownership(instance_id, current_user)
     return ec2_service.extend_instance(instance_id)
+
+
+@app.post("/instances/{instance_id}/timer", response_model=ExtendTimerResponse)
+def set_instance_timer(
+    instance_id: str,
+    payload: SetTimerRequest,
+    current_user: UserInDB = Depends(get_current_instructor_or_admin),
+):
+    """
+    ตั้งเวลาที่เหลือก่อน auto-stop ของ VM รายเครื่อง (เฉพาะ Instructor/Admin)
+    - minutes = เวลาที่เหลือ นับจากตอนเรียก API (ไม่ใช่บวกเพิ่ม) ขั้นต่ำ 1 นาที สูงสุดตาม AUTO_STOP_MAX_HOURS (24 ชม.)
+    - ใช้ได้กับ VM ของ student ที่กำลัง running/pending เท่านั้น
+    - ไม่ตรวจความเป็นเจ้าของ: อาจารย์/แอดมินตั้งให้ VM ของนักศึกษาคนไหนก็ได้
+    """
+    return ec2_service.set_instance_timer(instance_id, payload.minutes)
 
 
 @app.delete("/instances/{instance_id}", response_model=InstanceActionResponse)

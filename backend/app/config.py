@@ -70,6 +70,8 @@ class Settings(BaseSettings):
     # ตัว stop จริงทำโดย Lambda + EventBridge (ดู terraform/lambda.tf) ที่อ่าน expires_at จาก DynamoDB
     # ปรับได้ผ่าน .env: AUTO_STOP_HOURS=4  (ใส่ทศนิยมได้ เช่น 0.05 = 3 นาที ไว้ทดสอบ)
     auto_stop_hours: float = 4.0
+    # เพดานสูงสุดที่ admin/instructor ตั้งเวลาให้ VM รายเครื่องได้ (POST /instances/{id}/timer)
+    auto_stop_max_hours: float = 24.0
 
     # GNS3 server login ต่อ VM (GNS3 2.2 มี HTTP basic auth ได้ 1 user ต่อ server)
     # ตอน launch ระบบจะสุ่มรหัสผ่านใหม่ให้ VM แต่ละเครื่อง ผ่าน EC2 UserData (first boot)
