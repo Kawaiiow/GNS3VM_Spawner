@@ -47,3 +47,4 @@ backend/.env
 .terraform.lock.hcl
 terraform.tfstate
 aws
+terraform/auto_stop_lambda.zip

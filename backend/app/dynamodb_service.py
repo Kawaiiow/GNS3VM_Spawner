@@ -345,6 +345,8 @@ def create_instance_record(
     launch_time: Optional[str] = None,
     gns3_user: Optional[str] = None,
     gns3_password: Optional[str] = None,
+    auto_stop: bool = False,
+    expires_at: Optional[int] = None,
 ) -> dict:
     table = get_instances_table()
     now = _now_iso()
@@ -366,6 +368,11 @@ def create_instance_record(
     if gns3_user and gns3_password:
         item["gns3_user"] = gns3_user
         item["gns3_password"] = gns3_password
+    # Auto-stop (student เท่านั้น): Lambda จะ stop VM เมื่อ now >= expires_at
+    if auto_stop:
+        item["auto_stop"] = True
+        if expires_at is not None:
+            item["expires_at"] = int(expires_at)
     try:
         table.put_item(Item=item)
         return item
@@ -429,13 +436,51 @@ def update_instance_state(
         )
 
 
+def set_instance_expiry(instance_id: str, expires_at: int) -> None:
+    """ตั้ง/รีเวลา auto-stop ของ instance (expires_at = epoch วินาที)"""
+    table = get_instances_table()
+    try:
+        table.update_item(
+            Key={"instance_id": instance_id},
+            UpdateExpression="SET expires_at = :e, updated_at = :now",
+            ConditionExpression="attribute_exists(instance_id)",
+            ExpressionAttributeValues={":e": int(expires_at), ":now": _now_iso()},
+        )
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"ไม่พบข้อมูล instance {instance_id}",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error setting instance expiry: {e.response['Error']['Message']}",
+        )
+
+
+def clear_instance_expiry(instance_id: str) -> None:
+    """ลบเวลา auto-stop (ใช้ตอน VM ถูก stop เพราะ Lambda ไม่ควรสั่งปิดซ้ำ)"""
+    table = get_instances_table()
+    try:
+        table.update_item(
+            Key={"instance_id": instance_id},
+            UpdateExpression="REMOVE expires_at SET updated_at = :now",
+            ExpressionAttributeValues={":now": _now_iso()},
+        )
+    except ClientError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error clearing instance expiry: {e.response['Error']['Message']}",
+        )
+
+
 def mark_instance_terminated(instance_id: str) -> None:
     table = get_instances_table()
     now = _now_iso()
     try:
         table.update_item(
             Key={"instance_id": instance_id},
-            UpdateExpression="SET #st = :term, terminated_at = :now, updated_at = :now",
+            UpdateExpression="SET #st = :term, terminated_at = :now, updated_at = :now REMOVE expires_at",
             ExpressionAttributeNames={"#st": "state"},
             ExpressionAttributeValues={
                 ":term": "terminated",

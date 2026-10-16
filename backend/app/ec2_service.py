@@ -27,6 +27,7 @@ from app.dynamodb_service import (
     EXERCISE_SLOT,
     SANDBOX_SLOT,
     assign_user_vm,
+    clear_instance_expiry,
     create_instance_record,
     get_exercise_record,
     get_instance_record,
@@ -37,6 +38,7 @@ from app.dynamodb_service import (
     mark_instance_terminated,
     release_user_vm,
     reserve_user_vm_slot,
+    set_instance_expiry,
     update_exercise_fields,
     update_exercise_status,
     update_instance_state,
@@ -44,6 +46,19 @@ from app.dynamodb_service import (
 from app.models import InstanceInfo
 
 PROJECT_TAG_VALUE = "gns3-cloud"
+
+
+# ==========================================
+# AUTO-STOP (เฉพาะ VM ของ student)
+# ==========================================
+
+def _auto_stop_seconds() -> int:
+    return int(get_settings().auto_stop_hours * 3600)
+
+
+def _new_expiry() -> int:
+    """epoch วินาทีที่ VM จะถูก stop ถ้าเริ่มนับตอนนี้"""
+    return int(time.time()) + _auto_stop_seconds()
 
 
 def get_ec2_client():
@@ -391,6 +406,10 @@ def launch_instance(
 
     now_iso = datetime.now(timezone.utc).isoformat()
 
+    # student เท่านั้นที่ถูกจับเวลา auto-stop (instructor/admin ไม่ถูกปิดอัตโนมัติ)
+    auto_stop = (role or "student") == "student"
+    expires_at = _new_expiry() if auto_stop else None
+
     tags = [
         {"Key": "Name", "Value": instance_name},
         {"Key": "Project", "Value": PROJECT_TAG_VALUE},
@@ -433,6 +452,8 @@ def launch_instance(
         launch_time=now_iso,
         gns3_user=gns3_user,
         gns3_password=gns3_password,
+        auto_stop=auto_stop,
+        expires_at=expires_at,
     )
 
     # 4. Finalize ช่องล็อกของ student (instructor ไม่มีล็อก)
@@ -450,6 +471,9 @@ def launch_instance(
         private_ip=instance.get("PrivateIpAddress"),
         launch_time=now_iso,
         created_at=now_iso,
+        auto_stop=auto_stop or None,
+        expires_at=expires_at,
+        remaining_seconds=_auto_stop_seconds() if auto_stop else None,
         gns3_user=gns3_user,
         gns3_password=gns3_password,
     )
@@ -513,11 +537,26 @@ def list_instances(
                 launch_time=r.get("launch_time"),
                 created_at=r.get("created_at"),
                 terminated_at=r.get("terminated_at"),
+                auto_stop=r.get("auto_stop"),
+                expires_at=_expires_at_of(r, latest.get("state", r.get("state"))),
+                remaining_seconds=_remaining_of(r, latest.get("state", r.get("state"))),
                 gns3_user=r.get("gns3_user") if include_credentials else None,
                 gns3_password=r.get("gns3_password") if include_credentials else None,
             )
         )
     return results
+
+
+def _expires_at_of(record: dict, state: Optional[str]) -> Optional[int]:
+    """expires_at ที่ส่งให้ client: มีค่าเฉพาะตอน VM ยังทำงานอยู่ (running/pending)"""
+    if state not in ("running", "pending") or record.get("expires_at") is None:
+        return None
+    return int(record["expires_at"])
+
+
+def _remaining_of(record: dict, state: Optional[str]) -> Optional[int]:
+    exp = _expires_at_of(record, state)
+    return None if exp is None else max(0, exp - int(time.time()))
 
 
 def get_instance_details(instance_id: str) -> Optional[dict]:
@@ -544,7 +583,14 @@ def start_instance(instance_id: str) -> dict:
     except ClientError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     state = resp["StartingInstances"][0]["CurrentState"]["Name"]
+    previous = resp["StartingInstances"][0]["PreviousState"]["Name"]
     update_instance_state(instance_id, state)
+
+    # Auto-stop: เริ่มนับ 4 ชม. ใหม่เฉพาะตอนที่เครื่องถูกเปิดจาก stopped จริงๆ
+    # (ถ้ากด start ตอนที่ running อยู่แล้วจะไม่รีเวลา ต้องใช้ extend_instance)
+    rec = get_instance_record(instance_id)
+    if rec and rec.get("auto_stop") and previous == "stopped":
+        set_instance_expiry(instance_id, _new_expiry())
 
     # รอให้เครื่องเป็น running เพื่อให้ได้ public IP ใหม่ แล้วบันทึกลง DB ก่อนตอบกลับ
     public_ip: Optional[str] = None
@@ -577,11 +623,45 @@ def stop_instance(instance_id: str) -> dict:
 
     # Public IP จะถูกปล่อยเมื่อ stop -> เซ็ต public_ip เป็น None ใน DB ทันที
     update_instance_state(instance_id, state, clear_public_ip=True)
+    clear_instance_expiry(instance_id)  # หยุดจับเวลา (เริ่มนับใหม่ตอน start)
     return {
         "instance_id": instance_id,
         "state": state,
         "public_ip": None,
         "message": "instance กำลังปิดเครื่อง",
+    }
+
+
+def extend_instance(instance_id: str) -> dict:
+    """
+    รีเวลา auto-stop กลับเป็น AUTO_STOP_HOURS (4 ชม.) นับจากตอนนี้
+    ใช้ได้เฉพาะ VM ที่จับเวลาอยู่ (student) และกำลัง running/pending
+    """
+    rec = get_instance_record(instance_id)
+    if not rec or rec.get("state") == "terminated":
+        raise HTTPException(status_code=404, detail=f"ไม่พบข้อมูล instance {instance_id}")
+    if not rec.get("auto_stop"):
+        raise HTTPException(status_code=400, detail="VM นี้ไม่มีการจับเวลา auto-stop")
+
+    # เช็คสถานะจริงจาก EC2 (ค่าใน DB อาจเก่า)
+    client = get_ec2_client()
+    try:
+        state, _ = _sync_instance_from_ec2(client, instance_id)
+    except ClientError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    if state not in ("running", "pending"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"VM ไม่ได้ทำงานอยู่ (สถานะ: {state}) กรุณากด start ก่อน เวลาจะเริ่มนับใหม่ให้เอง",
+        )
+
+    new_exp = _new_expiry()
+    set_instance_expiry(instance_id, new_exp)
+    return {
+        "instance_id": instance_id,
+        "expires_at": new_exp,
+        "remaining_seconds": _auto_stop_seconds(),
+        "message": "รีเวลาเรียบร้อย",
     }
 
 

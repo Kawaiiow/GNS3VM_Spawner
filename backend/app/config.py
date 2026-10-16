@@ -65,6 +65,12 @@ class Settings(BaseSettings):
     # Learner Lab มี budget จำกัดต่อ lab (มักไม่กี่สิบ USD) แนะนำตั้งค่าต่ำไว้ก่อน
     max_concurrent_instances: int = 3
 
+    # Auto-stop: VM ของ student จะถูก stop อัตโนมัติเมื่อเปิดมานานเกินค่านี้ (ชั่วโมง)
+    # นับจากตอน launch / start และ student กดรีเวลากลับเป็นค่านี้ได้ (POST /instances/{id}/extend)
+    # ตัว stop จริงทำโดย Lambda + EventBridge (ดู terraform/lambda.tf) ที่อ่าน expires_at จาก DynamoDB
+    # ปรับได้ผ่าน .env: AUTO_STOP_HOURS=4  (ใส่ทศนิยมได้ เช่น 0.05 = 3 นาที ไว้ทดสอบ)
+    auto_stop_hours: float = 4.0
+
     # GNS3 server login ต่อ VM (GNS3 2.2 มี HTTP basic auth ได้ 1 user ต่อ server)
     # ตอน launch ระบบจะสุ่มรหัสผ่านใหม่ให้ VM แต่ละเครื่อง ผ่าน EC2 UserData (first boot)
     # แล้วเก็บไว้ใน DynamoDB และส่งให้เจ้าของ VM เท่านั้น

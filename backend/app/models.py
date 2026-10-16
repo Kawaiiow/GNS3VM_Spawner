@@ -165,6 +165,13 @@ class InstanceActionResponse(BaseModel):
     public_ip: Optional[str] = None
 
 
+class ExtendTimerResponse(BaseModel):
+    instance_id: str
+    expires_at: int = Field(..., description="เวลาที่ระบบจะ stop VM (epoch วินาที, UTC)")
+    remaining_seconds: int = Field(..., description="เวลาที่เหลือก่อนถูก stop (วินาที)")
+    message: str
+
+
 class InstanceInfo(BaseModel):
     instance_id: str
     user_id: Optional[str] = None
@@ -177,6 +184,10 @@ class InstanceInfo(BaseModel):
     launch_time: Optional[str] = None
     created_at: Optional[str] = None
     terminated_at: Optional[str] = None
+    # Auto-stop (เฉพาะ VM ของ student): epoch วินาทีที่ระบบจะ stop VM และเวลาที่เหลือ
+    auto_stop: Optional[bool] = None
+    expires_at: Optional[int] = None
+    remaining_seconds: Optional[int] = None
     # Login ของ GNS3 server บน VM นี้ (ส่งให้เจ้าของ VM เท่านั้น)
     gns3_user: Optional[str] = None
     gns3_password: Optional[str] = None

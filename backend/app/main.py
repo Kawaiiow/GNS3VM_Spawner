@@ -40,6 +40,7 @@ from app.models import (
     ExerciseCreate,
     ExerciseListResponse,
     ExerciseResponse,
+    ExtendTimerResponse,
     InstanceActionResponse,
     InstanceInfo,
     InstanceListResponse,
@@ -455,6 +456,20 @@ def stop_instance(
     """ปิดเครื่อง VM ชั่วคราว (ตรวจสอบความเป็นเจ้าของก่อน)"""
     _verify_instance_ownership(instance_id, current_user)
     return ec2_service.stop_instance(instance_id)
+
+
+@app.post("/instances/{instance_id}/extend", response_model=ExtendTimerResponse)
+def extend_instance_timer(
+    instance_id: str,
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """
+    รีเวลา auto-stop กลับเป็น 4 ชั่วโมง (นับจากตอนกด) สำหรับ VM ของ student ที่กำลังทำงานอยู่
+    - ตรวจสอบความเป็นเจ้าของก่อน
+    - กดได้ไม่จำกัดครั้ง แต่ตั้งเป็นค่าเต็มใหม่เสมอ (ไม่ใช่บวกเพิ่ม)
+    """
+    _verify_instance_ownership(instance_id, current_user)
+    return ec2_service.extend_instance(instance_id)
 
 
 @app.delete("/instances/{instance_id}", response_model=InstanceActionResponse)
