@@ -331,7 +331,7 @@ def launch_instance(
             resolved_ami = template_ami
         exercise_title = exercise.get("title")
 
-    # 1. Atomic reservation in DynamoDB (เฉพาะ student) แยกช่อง Sandbox / Exercise
+    # 1. Atomic reservation in DynamoDB (student / instructor) แยกช่อง Sandbox / Exercise
     slot = EXERCISE_SLOT if exercise_id else SANDBOX_SLOT
     limited = is_slot_limited(role, slot)
     if limited:
@@ -456,7 +456,7 @@ def launch_instance(
         expires_at=expires_at,
     )
 
-    # 4. Finalize ช่องล็อกของ student (instructor ไม่มีล็อก)
+    # 4. Finalize ช่องล็อก (student / instructor)
     if limited:
         assign_user_vm(user_id, instance_id, slot)
 
@@ -688,14 +688,12 @@ def is_slot_limited(role: Optional[str], slot: str) -> bool:
     """
     ช่องล็อกนี้บังคับโควตากับ role นี้หรือไม่
     - student: จำกัด Sandbox 1 + Exercise 1
-    - instructor: จำกัด Sandbox 1 เครื่อง (Exercise ไม่จำกัด)
+    - instructor: จำกัด Sandbox 1 + Exercise 1 (เหมือน student)
     - admin: สร้าง VM ไม่ได้อยู่แล้ว
     """
     role = role or "student"
-    if role == "student":
+    if role in ("student", "instructor"):
         return True
-    if role == "instructor":
-        return slot == SANDBOX_SLOT
     return False
 
 

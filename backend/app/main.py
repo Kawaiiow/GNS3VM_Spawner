@@ -402,7 +402,7 @@ def create_instance(
     - ผูกกับ user_id ของผู้ใช้ที่ล็อกอินโดยอัตโนมัติ
     - บังคับโควตา 1 VM ต่อ 1 User อย่างเข้มงวดผ่าน DynamoDB Atomic Lock
     - รองรับการเลือก exercise_id เพื่อดึง AMI ของแบบฝึกหัดนั้นมา Launch
-    - student: Sandbox 1 เครื่อง + Exercise 1 เครื่อง | instructor: ไม่จำกัด | admin: สร้างไม่ได้
+    - student / instructor: Sandbox 1 เครื่อง + Exercise 1 เครื่อง | admin: สร้างไม่ได้
     """
     if current_user.role == UserRole.ADMIN:
         raise HTTPException(

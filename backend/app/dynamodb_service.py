@@ -276,7 +276,7 @@ def reserve_user_vm_slot(user_id: str, slot: str = SANDBOX_SLOT) -> None:
             else:
                 detail = (
                     f"User already owns an active VM instance ({active_id}). "
-                    "Every student is limited to 1 active sandbox VM."
+                    "Each user is limited to 1 active sandbox VM."
                 )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
