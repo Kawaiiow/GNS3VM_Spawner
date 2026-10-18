@@ -99,7 +99,7 @@ class Settings(BaseSettings):
     exercise_template_mode: str = "gns3project"
     # รวม image ของ node (IOS/QEMU) ลงในไฟล์ export ด้วยหรือไม่ (ไฟล์ใหญ่ขึ้น)
     # เปิดเมื่อ image อยู่เฉพาะใน VM ของอาจารย์ ไม่ได้อยู่ใน Base AMI
-    gns3_export_include_images: bool = False
+    gns3_export_include_images: bool = True
     gns3_export_include_snapshots: bool = False
     # การคุย GNS3 REST API ของ VM อาจารย์ (ตอน export)
     gns3_api_port: int = 3080

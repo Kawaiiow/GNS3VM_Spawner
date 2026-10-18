@@ -135,3 +135,9 @@ variable "expose_backend_port" {
   type        = bool
   default     = false
 }
+
+
+variable "gns3_export_include_images" {
+  type    = bool
+  default = true
+}
