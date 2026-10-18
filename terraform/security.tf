@@ -8,13 +8,21 @@
 # ALB ที่เปิดสู่อินเทอร์เน็ต (หน้าเว็บ)
 resource "aws_security_group" "alb" {
   name        = "${var.project}-tf-alb-sg"
-  description = "NetLab public ALB (HTTP 80, backend 8000)"
+  description = "NetLab public ALB (HTTP 80, HTTPS 443, backend 8000)"
   vpc_id      = data.aws_vpc.default.id
 
   ingress {
     description = "HTTP from internet"
     from_port   = 80
     to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "HTTPS from internet"
+    from_port   = 443
+    to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }

@@ -5,9 +5,9 @@ Terraform ชุดนี้สร้างโครงสร้างสำห�
 
 ```
                       Internet
-                         │ HTTP :80
+                         │ HTTPS :443 / HTTP :80 (redirect)
                 ┌────────▼─────────┐
-                │ ALB สาธารณะ      │  (2 AZ)
+                │ ALB สาธารณะ      │  (2 AZ, SSL/TLS)
                 └────────┬─────────┘
                          │ :8080
         ┌────────────────▼────────────────┐
@@ -36,8 +36,8 @@ Terraform ชุดนี้สร้างโครงสร้างสำห�
 | ไฟล์ | ทรัพยากร |
 |---|---|
 | `data.tf` | อ้างอิง default VPC, `LabInstanceProfile`, Amazon Linux 2023, และ GNS3 AMI ล่าสุด (`netlab-gns3-base*`) |
-| `security.tf` | `netlab-tf-alb-sg` (80 เปิดทุกที่), `netlab-tf-frontend-sg` (8080 จาก ALB เท่านั้น), `netlab-tf-backend-alb-sg` (8000 จาก frontend), `netlab-tf-backend-sg` (8000 จาก internal ALB) ทุกตัว SSH 22 เฉพาะ admin และ `netlab-tf-gns3-vm-sg` (3080, 5900-5999, 22 admin) สำหรับ VM นักศึกษา |
-| `alb.tf` | ALB สาธารณะ (→ frontend :8080) และ ALB ภายใน (→ backend :8000) พร้อม target group / health check (`/` และ `/health`) |
+| `security.tf` | `netlab-tf-alb-sg` (80, 443 เปิดทุกที่, 8000 สำหรับ backend), `netlab-tf-frontend-sg` (8080 จาก ALB เท่านั้น), `netlab-tf-backend-alb-sg` (8000 จาก frontend), `netlab-tf-backend-sg` (8000 จาก internal ALB) ทุกตัว SSH 22 เฉพาะ admin และ `netlab-tf-gns3-vm-sg` (3080, 5900-5999, 22 admin) สำหรับ VM นักศึกษา |
+| `alb.tf` | ALB สาธารณะ (HTTPS :443 → frontend :8080, HTTP :80 redirect → 443, และ backend :8000) พร้อมรองรับ SSL/TLS (ACM certificate หรือ self-signed cert อัตโนมัติ), target group / health check (`/` และ `/health`) |
 | `dynamodb.tf` | ตาราง `netlab_users`, `netlab_instances`, `netlab_exercises` พร้อม GSI (ตรงกับ `init_dynamodb.py`) |
 | `s3.tf` | bucket private สำหรับเก็บ snapshot แบบฝึกหัด (`netlab-snapshots-<random>`) |
 | `ec2.tf` | Launch Template + Auto Scaling Group ของ Frontend และ Backend (กระจาย AZ, health check แบบ ELB, rolling refresh), `random_password` สำหรับ JWT secret, และตัว cleanup VM ตอน destroy |
@@ -253,6 +253,9 @@ docker run -d --name backend --restart unless-stopped --env-file /opt/app/backen
 | `lab_instance_type` | `t3.medium` | ชนิด VM นักศึกษา (`DEFAULT_INSTANCE_TYPE`) `.env.example` ตั้งเป็น `t2.micro` เพื่อประหยัด credit แต่ RAM 1 GB มักไม่พอรัน GNS3 หลาย node |
 | `max_concurrent_instances` | `3` | จำกัดจำนวน VM พร้อมกัน (กัน credit หมด) |
 | `expose_backend_port` | `false` | เปิด 8000 บน ALB สาธารณะเฉพาะ `admin_cidr` ให้ `terraform destroy` เรียก API ลบ VM/AMI (ถ้าปิดจะใช้ aws CLI fallback) เบราว์เซอร์ไม่ต้องเข้า backend เพราะ frontend เรียกจากฝั่ง server |
+| `certificate_arn` | `""` | ARN ของ SSL/TLS Certificate ใน ACM (ถ้าเว้นว่างไว้ ระบบจะสร้าง self-signed cert และ import เข้า ACM ให้อัตโนมัติ) |
+| `ssl_policy` | `ELBSecurityPolicy-TLS13-1-2-2021-06` | SSL Policy สำหรับ HTTPS Listener บน ALB |
+| `redirect_http_to_https` | `true` | เปลี่ยนเส้นทาง HTTP (พอร์ต 80) ไปยัง HTTPS (พอร์ต 443) อัตโนมัติ |
 | `users_table`, `instances_table`, `exercises_table` | `netlab_*` | ชื่อตาราง DynamoDB |
 
 ## การใช้งานหลัง deploy
@@ -297,7 +300,7 @@ docker logs -f frontend     # เครื่อง frontend
 
 ข้อจำกัดที่ควรเขียนในรายงาน:
 - GNS3 VM ที่ API สร้างไม่ได้สำรอง ถ้า AZ ล่ม VM ใน AZ นั้นหาย (ตั้งใจให้เป็นแบบนี้)
-- ใช้ HTTP พอร์ต 80 เท่านั้น (Learner Lab ไม่มี domain สำหรับ ACM certificate)
+- มีการเข้ารหัส SSL/TLS บนพอร์ต 443 ผ่าน ALB (หากไม่มี custom domain บน ACM สามารถปล่อยว่าง `certificate_arn` เพื่อให้ Terraform สร้าง self-signed certificate และ import เข้า ACM ให้อัตโนมัติ โดยเบราว์เซอร์จะแสดงคำเตือน Self-signed certificate)
 - ALB 2 ตัว (สาธารณะ + ภายใน) คิดค่าบริการรายชั่วโมงตลอดเวลาที่เปิดอยู่ ควร `terraform destroy` เมื่อไม่ใช้
 
 ## ลบทั้งหมด (`terraform destroy`)
