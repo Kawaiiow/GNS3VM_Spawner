@@ -36,13 +36,9 @@
                 {% if sb and sb.state in ["running", "stopped"] %}
                 <div class="text-gray-600 text-sm my-4">
                     <hr class="mb-4">
-                    {% if sb.remaining_seconds is not none %}
-                    <p class="text-gray-600 text-sm">เวลาที่เหลือ</p>
-                    {% set total_seconds = sb.remaining_seconds %}
-                    {% set hours = (total_seconds // 3600) | int %}
-                    {% set minutes = ((total_seconds % 3600) // 60) | int %}
-                    {% set seconds = (total_seconds % 60) | int %}
-                    <p class="text-gray-800 text-lg">{{ '%02d:%02d:%02d' | format(hours, minutes, seconds) }}</p>
+                    {% if sb.expires_at is not none %}
+                    <p class="text-gray-600 text-sm">หมดเวลาเมื่อ</p>
+                    <p class="text-gray-800 text-lg expires-at" data-ts="{{ sb.expires_at }}">{{ sb.expires_at }}</p>
                     {% endif %}
                     <p class="text-gray-600 text-sm">ชื่อ Sandbox</p>
                     <p class="text-gray-800 text-lg">{{ sb.name }}</p>
@@ -70,7 +66,7 @@
                     {% if sb.state == "running" and sb.remaining_seconds is not none %}
                     <form method="POST" action="/instance/extend" class="w-full">
                         <input type="hidden" name="instance_id" value="{{ sb.instance_id }}">
-                        <button type="submit" class="w-full bg-sky-600 hover:bg-sky-700 transition-colors duration-200 ease-in-out text-white text-sm px-4 py-3 rounded-xl">เพิ่มเวลา</button>
+                        <button type="submit" class="w-full bg-sky-600 hover:bg-sky-700 transition-colors duration-200 ease-in-out text-white text-sm px-4 py-3 rounded-xl">รีเซ็ตเวลา</button>
                     </form>
                     {% endif %}
                 </div>
@@ -94,13 +90,9 @@
                 {% if ex and ex.state in ["running", "stopped"] %}
                 <div class="text-gray-600 text-sm my-4">
                     <hr class="mb-4">
-                    {% if ex.remaining_seconds is not none %}
-                    <p class="text-gray-600 text-sm">เวลาที่เหลือ</p>
-                    {% set total_seconds = ex.remaining_seconds %}
-                    {% set hours = (total_seconds // 3600) | int %}
-                    {% set minutes = ((total_seconds % 3600) // 60) | int %}
-                    {% set seconds = (total_seconds % 60) | int %}
-                    <p class="text-gray-800 text-lg">{{ '%02d:%02d:%02d' | format(hours, minutes, seconds) }}</p>
+                    {% if ex.expires_at is not none %}
+                    <p class="text-gray-600 text-sm">หมดเวลาเมื่อ</p>
+                    <p class="text-gray-800 text-lg expires-at" data-ts="{{ ex.expires_at }}">{{ ex.expires_at }}</p>
                     {% endif %}
                     <p class="text-gray-600 text-sm">ชื่อแบบฝึกหัด</p>
                     <p class="text-gray-800 text-lg">{{ ex.name }}</p>
@@ -128,7 +120,7 @@
                     {% if ex.remaining_seconds is not none %}
                     <form method="POST" action="/instance/extend" class="w-full">
                         <input type="hidden" name="instance_id" value="{{ ex.instance_id }}">
-                        <button type="submit" class="w-full bg-sky-600 hover:bg-sky-700 transition-colors duration-200 ease-in-out text-white text-sm px-4 py-3 rounded-xl">เพิ่มเวลา</button>
+                        <button type="submit" class="w-full bg-sky-600 hover:bg-sky-700 transition-colors duration-200 ease-in-out text-white text-sm px-4 py-3 rounded-xl">รีเซ็ตเวลา</button>
                     </form>
                     {% endif %}
                 </div>
