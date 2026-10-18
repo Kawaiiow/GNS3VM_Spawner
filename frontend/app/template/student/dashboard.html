@@ -36,6 +36,14 @@
                 {% if sb and sb.state in ["running", "stopped"] %}
                 <div class="text-gray-600 text-sm my-4">
                     <hr class="mb-4">
+                    {% if sb.remaining_seconds is not none %}
+                    <p class="text-gray-600 text-sm">เวลาที่เหลือ</p>
+                    {% set total_seconds = sb.remaining_seconds %}
+                    {% set hours = (total_seconds // 3600) | int %}
+                    {% set minutes = ((total_seconds % 3600) // 60) | int %}
+                    {% set seconds = (total_seconds % 60) | int %}
+                    <p class="text-gray-800 text-lg">{{ '%02d:%02d:%02d' | format(hours, minutes, seconds) }}</p>
+                    {% endif %}
                     <p class="text-gray-600 text-sm">ชื่อ Sandbox</p>
                     <p class="text-gray-800 text-lg">{{ sb.name }}</p>
                     <p class="text-gray-600 text-sm">สถานะ</p>
@@ -54,11 +62,17 @@
                     <form method="POST" action="/instance/{{ 'stop' if sb.state == 'running' else 'start' }}" class="w-full">
                         <input type="hidden" name="instance_id" value="{{ sb.instance_id }}">
                         {% if sb.state == "running" %}
-                        <button type="submit" class="w-full text-xs px-3 py-2 bg-amber-500 hover:bg-yellow-600 transition-colors duration-200 ease-in-out rounded-xl text-white">หยุด</button>
+                        <button type="submit" class="w-full bg-orange-600 hover:bg-orange-700 transition-colors duration-200 ease-in-out text-white text-sm px-4 py-3 rounded-xl">หยุด</button>
                         {% else %}
-                        <button type="submit" class="w-full text-xs px-3 py-2 bg-emerald-600 hover:bg-emerald-700 transition-colors duration-200 ease-in-out rounded-xl text-white">เริ่ม</button>
+                        <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 transition-colors duration-200 ease-in-out text-white text-sm px-4 py-3 rounded-xl">เริ่ม</button>
                         {% endif %}
                     </form>
+                    {% if sb.state == "running" and sb.remaining_seconds is not none %}
+                    <form method="POST" action="/instance/extend" class="w-full">
+                        <input type="hidden" name="instance_id" value="{{ sb.instance_id }}">
+                        <button type="submit" class="w-full bg-sky-600 hover:bg-sky-700 transition-colors duration-200 ease-in-out text-white text-sm px-4 py-3 rounded-xl">เพิ่มเวลา</button>
+                    </form>
+                    {% endif %}
                 </div>
                 {% endif %}
             </div>
@@ -80,6 +94,14 @@
                 {% if ex and ex.state in ["running", "stopped"] %}
                 <div class="text-gray-600 text-sm my-4">
                     <hr class="mb-4">
+                    {% if ex.remaining_seconds is not none %}
+                    <p class="text-gray-600 text-sm">เวลาที่เหลือ</p>
+                    {% set total_seconds = ex.remaining_seconds %}
+                    {% set hours = (total_seconds // 3600) | int %}
+                    {% set minutes = ((total_seconds % 3600) // 60) | int %}
+                    {% set seconds = (total_seconds % 60) | int %}
+                    <p class="text-gray-800 text-lg">{{ '%02d:%02d:%02d' | format(hours, minutes, seconds) }}</p>
+                    {% endif %}
                     <p class="text-gray-600 text-sm">ชื่อแบบฝึกหัด</p>
                     <p class="text-gray-800 text-lg">{{ ex.name }}</p>
                     <p class="text-gray-600 text-sm">สถานะ</p>
@@ -98,11 +120,17 @@
                     <form method="POST" action="/instance/{{ 'stop' if ex.state == 'running' else 'start' }}" class="w-full">
                         <input type="hidden" name="instance_id" value="{{ ex.instance_id }}">
                         {% if ex.state == "running" %}
-                        <button type="submit" class="w-full text-xs px-3 py-2 bg-amber-500 hover:bg-yellow-600 transition-colors duration-200 ease-in-out rounded-xl text-white">หยุด</button>
+                        <button type="submit" class="w-full bg-orange-600 hover:bg-orange-700 transition-colors duration-200 ease-in-out text-white text-sm px-4 py-3 rounded-xl">หยุด</button>
                         {% else %}
-                        <button type="submit" class="w-full text-xs px-3 py-2 bg-emerald-600 hover:bg-emerald-700 transition-colors duration-200 ease-in-out rounded-xl text-white">เริ่ม</button>
+                        <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 transition-colors duration-200 ease-in-out text-white text-sm px-4 py-3 rounded-xl">เริ่ม</button>
                         {% endif %}
                     </form>
+                    {% if ex.remaining_seconds is not none %}
+                    <form method="POST" action="/instance/extend" class="w-full">
+                        <input type="hidden" name="instance_id" value="{{ ex.instance_id }}">
+                        <button type="submit" class="w-full bg-sky-600 hover:bg-sky-700 transition-colors duration-200 ease-in-out text-white text-sm px-4 py-3 rounded-xl">เพิ่มเวลา</button>
+                    </form>
+                    {% endif %}
                 </div>
                 {% endif %}
             </div>

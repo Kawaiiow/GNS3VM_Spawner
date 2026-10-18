@@ -54,9 +54,9 @@
                     <form method="POST" action="/instructor/instance/{{ 'stop' if sb.state == 'running' else 'start' }}" class="w-full">
                         <input type="hidden" name="instance_id" value="{{ sb.instance_id }}">
                         {% if sb.state == "running" %}
-                        <button type="submit" class="w-full text-xs px-3 py-2 bg-amber-500 hover:bg-yellow-600 transition-colors duration-200 ease-in-out rounded-xl text-white">หยุด</button>
+                        <button type="submit" class="w-full bg-orange-600 hover:bg-orange-700 transition-colors duration-200 ease-in-out text-white text-sm px-4 py-3 rounded-xl">หยุด</button>
                         {% else %}
-                        <button type="submit" class="w-full text-xs px-3 py-2 bg-emerald-600 hover:bg-emerald-700 transition-colors duration-200 ease-in-out rounded-xl text-white">เริ่ม</button>
+                        <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 transition-colors duration-200 ease-in-out text-white text-sm px-4 py-3 rounded-xl">เริ่ม</button>
                         {% endif %}
                     </form>
                 </div>
@@ -98,9 +98,9 @@
                     <form method="POST" action="/instructor/instance/{{ 'stop' if ex.state == 'running' else 'start' }}" class="w-full">
                         <input type="hidden" name="instance_id" value="{{ ex.instance_id }}">
                         {% if ex.state == "running" %}
-                        <button type="submit" class="w-full text-xs px-3 py-2 bg-amber-500 hover:bg-yellow-600 transition-colors duration-200 ease-in-out rounded-xl text-white">หยุด</button>
+                        <button type="submit" class="w-full bg-orange-600 hover:bg-orange-700 transition-colors duration-200 ease-in-out text-white text-sm px-4 py-3 rounded-xl">หยุด</button>
                         {% else %}
-                        <button type="submit" class="w-full text-xs px-3 py-2 bg-emerald-600 hover:bg-emerald-700 transition-colors duration-200 ease-in-out rounded-xl text-white">เริ่ม</button>
+                        <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 transition-colors duration-200 ease-in-out text-white text-sm px-4 py-3 rounded-xl">เริ่ม</button>
                         {% endif %}
                     </form>
                 </div>

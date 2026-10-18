@@ -56,6 +56,16 @@ def handle_student_stop_instance(request: Request, instance_id: str = Form(...))
         return HTMLResponse("<script>alert('ไม่สามารถหยุดเครื่องนี้ได้');location.href='/dashboard';</script>")
     return RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
 
+@router.post("/instance/extend")
+def handle_student_extend_instance(request: Request, instance_id: str = Form(...)):
+    try:
+        response = httpx.post(f"{BACKEND_URL}/instances/{instance_id}/extend", cookies={"access_token": request.cookies.get("access_token", "")}, timeout=10.0)
+    except:
+        return template.TemplateResponse(request=request, name="503.html", status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+    if response.status_code != 200:
+        return HTMLResponse("<script>alert('ไม่สามารถเพิ่มเวลาเครื่องนี้ได้');location.href='/dashboard';</script>")
+    return RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
+
 @router.post("/instance/delete")
 def handle_student_delete_instance(request: Request, instance_id: str = Form(...)):
     try:
