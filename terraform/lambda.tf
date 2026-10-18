@@ -31,12 +31,6 @@ data "archive_file" "auto_stop" {
   output_path = "${path.module}/auto_stop_lambda.zip"
 }
 
-# สร้าง log group เองเพื่อกำหนดอายุ log (ไม่ให้สะสมไม่จำกัด)
-resource "aws_cloudwatch_log_group" "auto_stop" {
-  name              = "/aws/lambda/${local.auto_stop_name}"
-  retention_in_days = 14
-}
-
 resource "aws_lambda_function" "auto_stop" {
   function_name = local.auto_stop_name
   description   = "NetLab: stop VM ของ student ที่เปิดเกินเวลา (อ่าน expires_at จาก DynamoDB)"
@@ -55,8 +49,6 @@ resource "aws_lambda_function" "auto_stop" {
       INSTANCES_TABLE = aws_dynamodb_table.instances.name
     }
   }
-
-  depends_on = [aws_cloudwatch_log_group.auto_stop]
 }
 
 # EventBridge (CloudWatch Events) schedule
@@ -85,5 +77,5 @@ output "auto_stop_lambda_name" {
 }
 
 output "auto_stop_log_group" {
-  value = aws_cloudwatch_log_group.auto_stop.name
+  value = "/aws/lambda/${local.auto_stop_name}"
 }
