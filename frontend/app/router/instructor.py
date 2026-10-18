@@ -1,7 +1,10 @@
 from fastapi import APIRouter, Request, Form, status
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import RedirectResponse, HTMLResponse
+from dotenv import load_dotenv
 import httpx, os
+
+load_dotenv()
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
