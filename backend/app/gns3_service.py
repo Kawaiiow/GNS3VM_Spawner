@@ -6,6 +6,8 @@ gns3_service.py
 - ลอง private IP ก่อน (backend อยู่ VPC เดียวกัน) แล้วค่อย public IP
 """
 
+import os
+import re
 import time
 import zipfile
 from typing import Optional
@@ -108,6 +110,52 @@ def select_projects(
     return [p for p in projects if p["project_id"] in chosen]
 
 
+_IMAGE_KIND = {"dynamips": "IOS", "iou": "IOU", "qemu": "QEMU"}
+_QEMU_IMAGE_FIELDS = (
+    "hda_disk_image", "hdb_disk_image", "hdc_disk_image", "hdd_disk_image",
+    "cdrom_image", "bios_image", "initrd", "kernel_image",
+)
+_SAFE_FILENAME = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def collect_project_images(instance_rec: dict, project_id: str) -> list[dict]:
+    """
+    รายการ image ที่ node ในโปรเจ็คใช้ (GET /v2/projects/{id}/nodes)
+    -> [{"kind": "IOS", "filename": "c7200.image"}, ...]  (kind = IOS | IOU | QEMU)
+    """
+    base, auth = _find_base(instance_rec)
+    try:
+        r = httpx.get(f"{base}/projects/{project_id}/nodes", auth=auth, timeout=30.0)
+        r.raise_for_status()
+    except httpx.HTTPError as e:
+        raise RuntimeError(f"อ่าน node ของโปรเจ็คจาก GNS3 ไม่ได้: {e}") from e
+
+    found: dict[tuple[str, str], dict] = {}
+    for node in r.json():
+        kind = _IMAGE_KIND.get(node.get("node_type"))
+        if not kind:
+            continue
+        props = node.get("properties") or {}
+        if kind == "IOS":
+            paths = [props.get("image")]
+        elif kind == "IOU":
+            paths = [props.get("path")]
+        else:
+            paths = [props.get(f) for f in _QEMU_IMAGE_FIELDS]
+
+        for p in paths:
+            if not p:
+                continue
+            filename = os.path.basename(str(p).replace("\\", "/"))
+            if not _SAFE_FILENAME.match(filename):
+                raise RuntimeError(
+                    f"ชื่อ image '{filename}' มีอักขระที่ไม่รองรับ "
+                    "(ใช้ได้เฉพาะ A-Z a-z 0-9 . _ -) กรุณาเปลี่ยนชื่อไฟล์ image ก่อน"
+                )
+            found[(kind, filename)] = {"kind": kind, "filename": filename}
+    return list(found.values())
+
+
 def export_project_to_file(instance_rec: dict, project_id: str, dest_path: str) -> None:
     """
     export โปรเจ็คจาก GNS3 ของ VM อาจารย์ (GET /v2/projects/{id}/export) เขียนลงไฟล์ .gns3project (zip)
@@ -118,7 +166,10 @@ def export_project_to_file(instance_rec: dict, project_id: str, dest_path: str) 
     base, auth = _find_base(instance_rec)
     params = {
         "include_snapshots": str(settings.gns3_export_include_snapshots).lower(),
-        "include_images": str(settings.gns3_export_include_images).lower(),
+        # ถ้าแยก image ไปเก็บใน S3 library (gns3_images_separate) ไม่ต้องยัดใน .gns3project ซ้ำ
+        "include_images": str(
+            settings.gns3_export_include_images and not settings.gns3_images_separate
+        ).lower(),
         "reset_mac_addresses": "true",
         "compression": "zip",
     }

@@ -16,7 +16,7 @@ import os
 import tempfile
 from typing import Optional
 
-from app import ec2_service, gns3_service, s3_service
+from app import ec2_service, gns3_service, image_service, s3_service
 from app.config import get_settings
 from app.dynamodb_service import update_exercise_fields, update_exercise_status
 
@@ -42,11 +42,28 @@ def build_exercise_export(
       ต่อโปรเจ็ค: export จาก GNS3 ของอาจารย์ -> .gns3project -> อัปโหลดขึ้น S3
       สำเร็จครบทุกโปรเจ็ค -> บันทึก s3_keys (เรียงตามโปรเจ็ค) แล้ว status = available
       ล้มเหลวที่โปรเจ็คใด -> ลบไฟล์ที่อัปโหลดไปแล้ว แล้ว status = failed (ดูสาเหตุที่ status_detail)
+      image (IOS/IOU/QEMU) ถูกแยกไปเก็บใน S3 library กลาง (ไม่ลบตอนล้มเหลว เพราะ exercise อื่นใช้ร่วมได้)
     VM นักศึกษาเปิดจาก Base AMI แล้ว import ไฟล์เหล่านี้ตอน first boot (ดู ec2_service.launch_instance)
     """
     uploaded: list[str] = []
+    stored_images: list[dict] = []
     total = len(selected_projects)
     try:
+        # 0) สำรอง image (IOS/IOU/QEMU) ของ node ที่โปรเจ็คใช้ขึ้น S3 library กลาง
+        #    ทำก่อน export เพื่อให้ล้มเหลวเร็ว (เช่น SSM ใช้ไม่ได้ / หา image ไม่เจอ)
+        if get_settings().gns3_images_separate:
+            _progress(exercise_id, "กำลังตรวจสอบ image (IOS/IOU/QEMU) ที่โปรเจ็คใช้")
+            wanted: dict[tuple[str, str], dict] = {}
+            for p in selected_projects:
+                for img in gns3_service.collect_project_images(instance_rec, p["project_id"]):
+                    wanted[(img["kind"], img["filename"])] = img
+            if wanted:
+                _progress(
+                    exercise_id,
+                    f"กำลังสำรอง image {len(wanted)} ไฟล์ขึ้น S3 (อาจใช้เวลาหลายนาที)",
+                )
+                stored_images = image_service.sync_images_to_s3(instance_rec, list(wanted.values()))
+
         with tempfile.TemporaryDirectory(prefix="netlab-export-") as tmp:
             for idx, p in enumerate(selected_projects, start=1):
                 pid = p["project_id"]
@@ -62,7 +79,10 @@ def build_exercise_export(
                 uploaded.append(key)
                 os.remove(path)  # ล้างดิสก์ของ backend ทีละไฟล์
 
-        update_exercise_fields(exercise_id, {"s3_keys": uploaded, "s3_key": uploaded[0]})
+        fields: dict = {"s3_keys": uploaded, "s3_key": uploaded[0]}
+        if stored_images:
+            fields["images"] = stored_images  # [{"kind","filename","s3_key"}] ให้ VM ใหม่โหลดก่อน import
+        update_exercise_fields(exercise_id, fields)
         update_exercise_status(exercise_id, "available")
     except Exception as e:  # noqa: BLE001 - ต้องจับทุกอย่างเพื่อไม่ให้ค้าง pending
         for key in uploaded:

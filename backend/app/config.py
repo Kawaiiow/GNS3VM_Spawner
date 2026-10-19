@@ -101,6 +101,14 @@ class Settings(BaseSettings):
     # เปิดเมื่อ image อยู่เฉพาะใน VM ของอาจารย์ ไม่ได้อยู่ใน Base AMI
     gns3_export_include_images: bool = True
     gns3_export_include_snapshots: bool = False
+    # แยก image (IOS/IOU/QEMU) ไปเก็บใน S3 library กลาง แทนการยัดไว้ใน .gns3project
+    #   True  = export โดยไม่รวม image (ไฟล์เล็ก) + อัปโหลด image แยกผ่าน SSM แล้วให้ VM ใหม่โหลดก่อน import
+    #   False = ใช้ gns3_export_include_images เหมือนเดิม
+    gns3_images_separate: bool = True
+    # โฟลเดอร์ images ของ GNS3 บน VM (ดู images_path ใน gns3_server.conf; ค่า default ของ GNS3 = ~/GNS3/images)
+    gns3_images_dir: str = "/home/ubuntu/GNS3/images"
+    gns3_images_owner: str = "ubuntu"      # user ที่รัน gns3-server (เจ้าของไฟล์ image)
+    ssm_command_timeout: int = 3600        # วินาที: รอ SSM Run Command อัปโหลด image จาก VM อาจารย์
     # การคุย GNS3 REST API ของ VM อาจารย์ (ตอน export)
     gns3_api_port: int = 3080
     gns3_prefer_private_ip: bool = True   # backend อยู่ VPC เดียวกับ VM -> ลอง private IP ก่อน

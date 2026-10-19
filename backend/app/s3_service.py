@@ -47,6 +47,13 @@ def build_exercise_key(exercise_id: str, project_id: Optional[str] = None) -> st
     return f"{prefix}/{name}" if prefix else name
 
 
+def build_image_key(kind: str, filename: str) -> str:
+    """key ของ image ใน library กลาง (kind = IOS | IOU | QEMU) ใช้ร่วมกันหลาย exercise"""
+    prefix = get_settings().snapshots_prefix.strip("/")
+    name = f"_images/{kind}/{filename}"
+    return f"{prefix}/{name}" if prefix else name
+
+
 def object_exists(key: str) -> bool:
     """เช็คว่ามีไฟล์นี้ใน S3 จริงไหม"""
     try:
@@ -73,6 +80,16 @@ def presign_get(key: str, expires: Optional[int] = None) -> str:
     settings = get_settings()
     return get_s3_client().generate_presigned_url(
         "get_object",
+        Params={"Bucket": _bucket(), "Key": key},
+        ExpiresIn=expires or settings.snapshot_url_expires,
+    )
+
+
+def presign_put(key: str, expires: Optional[int] = None) -> str:
+    """presigned URL สำหรับ PUT (ให้ VM อาจารย์อัปโหลดด้วย curl โดยไม่ต้องมีสิทธิ์ S3)"""
+    settings = get_settings()
+    return get_s3_client().generate_presigned_url(
+        "put_object",
         Params={"Bucket": _bucket(), "Key": key},
         ExpiresIn=expires or settings.snapshot_url_expires,
     )

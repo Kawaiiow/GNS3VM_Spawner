@@ -122,6 +122,9 @@ class ExerciseResponse(ExerciseBase):
     status: str = Field(..., description="สถานะต้นแบบ VM: pending | available | failed")
     s3_key: Optional[str] = Field(None, description="S3 object key ของต้นแบบ (โหมด gns3project = ไฟล์โปรเจ็คแรก, โหมด ami = AMI ที่สำรองไว้)")
     s3_keys: Optional[list[str]] = Field(None, description="S3 key ของไฟล์ .gns3project แต่ละโปรเจ็ค (เรียงตาม project_names)")
+    images: Optional[list[dict]] = Field(
+        None, description="image (IOS/IOU/QEMU) ที่โปรเจ็คใช้ พร้อม S3 key ใน library (VM ใหม่จะโหลดก่อน import โปรเจ็ค)"
+    )
     project_name: Optional[str] = Field(None, description="ชื่อโปรเจ็คในต้นแบบ (หลายโปรเจ็คคั่นด้วย ,)")
     project_names: Optional[list[str]] = Field(None, description="รายชื่อโปรเจ็ค GNS3 ทั้งหมดในต้นแบบ VM")
     project_count: Optional[int] = Field(None, description="จำนวนโปรเจ็คในต้นแบบ VM")

@@ -146,7 +146,24 @@ for i in $(seq 1 150); do
   [ "$code" = "200" ] && break
   sleep 2
 done
+__IMAGES__
 __IMPORTS__
+"""
+
+# ดาวน์โหลด image (IOS/IOU/QEMU) จาก S3 ลง images dir ของ GNS3 "ก่อน" import โปรเจ็ค
+# (ชื่อไฟล์ผ่านการตรวจ A-Za-z0-9._- มาแล้วตอน export; ข้ามถ้ามีไฟล์อยู่แล้ว)
+_GNS3_IMAGE_ONE_TEMPLATE = r"""
+D="__IMG_DIR__/__KIND__"
+install -d -o __OWNER__ -g __OWNER__ "$D"
+if [ ! -s "$D/__FILE__" ]; then
+  if curl -fsSL --retry 3 -o "$D/__FILE__.part" "__URL__"; then
+    mv "$D/__FILE__.part" "$D/__FILE__"
+    chown __OWNER__:__OWNER__ "$D/__FILE__"; chmod 755 "$D/__FILE__"
+    echo "image ok: __FILE__"
+  else
+    rm -f "$D/__FILE__.part"; echo "image FAILED: __FILE__"
+  fi
+fi
 """
 
 _GNS3_IMPORT_ONE_TEMPLATE = r"""
@@ -184,8 +201,9 @@ def _build_import_user_data(
     s3_keys: list[str],
     names: Optional[list[str]] = None,
     fallback_title: Optional[str] = None,
+    images: Optional[list[dict]] = None,
 ) -> str:
-    """names = ชื่อโปรเจ็คเรียงตาม s3_keys (ถ้าไม่มีใช้ fallback_title)"""
+    """names = ชื่อโปรเจ็คเรียงตาม s3_keys (ถ้าไม่มีใช้ fallback_title); images = [{"kind","filename","s3_key"}]"""
     settings = get_settings()
     blocks = []
     for idx, key in enumerate(s3_keys):
@@ -195,10 +213,19 @@ def _build_import_user_data(
                 "__NAME__", _safe_project_name(label)
             )
         )
+    image_blocks = [
+        _GNS3_IMAGE_ONE_TEMPLATE.replace("__URL__", s3_service.presign_get(img["s3_key"]))
+        .replace("__KIND__", img["kind"])
+        .replace("__FILE__", img["filename"])
+        .replace("__IMG_DIR__", settings.gns3_images_dir)
+        .replace("__OWNER__", settings.gns3_images_owner)
+        for img in (images or [])
+    ]
     return (
         _GNS3_IMPORT_USER_DATA_TEMPLATE.replace("__USER__", user)
         .replace("__PASSWORD__", password)
         .replace("__PORT__", str(settings.gns3_api_port))
+        .replace("__IMAGES__", "".join(image_blocks))
         .replace("__IMPORTS__", "".join(blocks))
     )
 
@@ -282,6 +309,7 @@ def launch_instance(
     # ตรวจสอบ exercise_id (ถ้ามีส่งมา)
     resolved_ami = ami_id
     exercise_s3_keys: list[str] = []
+    exercise_images: list[dict] = []
     exercise_project_names: list[str] = []
     exercise_title: Optional[str] = None
 
@@ -321,6 +349,7 @@ def launch_instance(
                         detail="ไม่พบไฟล์ของแบบฝึกหัดนี้บน S3 กรุณาแจ้งอาจารย์ให้สร้างแบบฝึกหัดใหม่",
                     )
             exercise_s3_keys = s3_keys
+            exercise_images = list(exercise.get("images") or [])
             exercise_project_names = list(exercise.get("project_names") or [])
             if not settings.gns3_set_vm_password:
                 raise HTTPException(
@@ -390,6 +419,7 @@ def launch_instance(
                     exercise_s3_keys,
                     names=exercise_project_names,
                     fallback_title=exercise_title,
+                    images=exercise_images,
                 )
             except Exception as e:
                 _rollback()
