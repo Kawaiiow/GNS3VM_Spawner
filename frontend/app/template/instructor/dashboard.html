@@ -10,11 +10,11 @@
         {% set sb = user.instances | selectattr("exercise_id", "none") | first %}
         {% set ex = user.instances | rejectattr("exercise_id", "none") | first %}
         <p class="text-gray-800 text-4xl">ยินดีต้อนรับ, {{ request.cookies.get("username", "Instructor") }}</p>
-        <p class="text-gray-600 text-xl mb-12">จัดการแบบฝึกหัดและติดตามความก้าวหน้าของผู้เรียน</p>
+        <p class="text-gray-600 text-xl mb-12">จัดการแบบฝึกหัดเพื่อช่วยเพิ่มศักยภาพผู้เรียน</p>
         <p class="text-gray-800 text-2xl">เครื่องของฉัน</p>
         <p class="text-gray-600 text-base mb-4">ทดลองในเครื่อง Sandbox หรือใช้เครื่องที่เตรียมไว้ให้ตามแบบฝึกหัด</p>
         <div class="grid gap-6 md:grid-cols-2 mb-12">
-            <div class="rounded-lg border shadow-sm p-6">
+            <div class="rounded-lg border shadow-sm p-6 flex flex-col">
                 <div class="flex items-center justify-between">
                     <div>
                         <p class="text-gray-800 text-lg">Sandbox</p>
@@ -40,8 +40,13 @@
                     <p class="text-gray-800 text-lg">{{ sb.name }}</p>
                     <p class="text-gray-600 text-sm">สถานะ</p>
                     <p class="text-gray-800 text-lg">{{ sb.state }}</p>
+                    {% if sb.public_ip %}
                     <p class="text-gray-600 text-sm">Public IP</p>
-                    <p class="text-gray-800 text-lg">{{ sb.public_ip or "-" }}</p>
+                    <p class="text-gray-800 text-lg">{{ sb.public_ip }}</p>
+                    <p class="text-gray-600 text-sm">พอร์ต</p>
+                    <p class="text-gray-800 text-lg">3080</p>
+                    <p class="text-gray-600 text-sm">URL</p>
+                    <p class="text-gray-800 text-lg"><a href="http://{{ sb.public_ip }}:3080" target="_blank">http://{{ sb.public_ip }}:3080</a></p>
                     <p class="text-gray-600 text-sm">ชื่อผู้ใช้ GNS3</p>
                     <p class="text-gray-800 text-lg">{{ sb.gns3_user }}</p>
                     <p class="text-gray-600 text-sm">รหัสผ่าน GNS3</p>
@@ -49,8 +54,9 @@
                         <input type="password" id="gns3-password-sb" value="{{ sb.gns3_password }}" title="คลิกเพื่อคัดลอกรหัสผ่าน" class="w-full bg-transparent text-gray-800 text-lg pr-8 outline-none cursor-pointer" onclick="toggleClipboard('gns3-password-sb')" readonly/>
                         <button type="button" class="absolute inset-y-0 right-0 flex items-center" onclick="togglePassword('gns3-password-sb', 'gns3-eye-sb')"><img id="gns3-eye-sb" src="/static/image/eye_open.svg" class="h-5 w-auto"></button>
                     </div>
+                    {% endif %}
                 </div>
-                <div class="flex gap-2">
+                <div class="flex gap-2 mt-auto">
                     <form method="POST" action="/instructor/instance/{{ 'stop' if sb.state == 'running' else 'start' }}" class="w-full">
                         <input type="hidden" name="instance_id" value="{{ sb.instance_id }}">
                         {% if sb.state == "running" %}
@@ -62,7 +68,7 @@
                 </div>
                 {% endif %}
             </div>
-            <div class="rounded-lg border shadow-sm p-6">
+            <div class="rounded-lg border shadow-sm p-6 flex flex-col">
                 <div class="flex items-center justify-between">
                     <div>
                         <p class="text-gray-800 text-lg">แบบฝึกหัด</p>
@@ -84,8 +90,13 @@
                     <p class="text-gray-800 text-lg">{{ ex.name }}</p>
                     <p class="text-gray-600 text-sm">สถานะ</p>
                     <p class="text-gray-800 text-lg">{{ ex.state }}</p>
+                    {% if ex.public_ip %}
                     <p class="text-gray-600 text-sm">Public IP</p>
-                    <p class="text-gray-800 text-lg">{{ ex.public_ip or "-" }}</p>
+                    <p class="text-gray-800 text-lg">{{ ex.public_ip }}</p>
+                    <p class="text-gray-600 text-sm">พอร์ต</p>
+                    <p class="text-gray-800 text-lg">3080</p>
+                    <p class="text-gray-600 text-sm">URL</p>
+                    <p class="text-gray-800 text-lg"><a href="http://{{ ex.public_ip }}:3080" target="_blank">http://{{ ex.public_ip }}:3080</a></p>
                     <p class="text-gray-600 text-sm">ชื่อผู้ใช้ GNS3</p>
                     <p class="text-gray-800 text-lg">{{ ex.gns3_user }}</p>
                     <p class="text-gray-600 text-sm">รหัสผ่าน GNS3</p>
@@ -93,8 +104,9 @@
                         <input type="password" id="gns3-password-ex" value="{{ ex.gns3_password }}" title="คลิกเพื่อคัดลอกรหัสผ่าน" class="w-full bg-transparent text-gray-800 text-lg pr-8 outline-none cursor-pointer" onclick="toggleClipboard('gns3-password-ex')" readonly/>
                         <button type="button" class="absolute inset-y-0 right-0 flex items-center" onclick="togglePassword('gns3-password-ex', 'gns3-eye-ex')"><img id="gns3-eye-ex" src="/static/image/eye_open.svg" class="h-5 w-auto"></button>
                     </div>
+                    {% endif %}
                 </div>
-                <div class="flex gap-2">
+                <div class="flex gap-2 mt-auto">
                     <form method="POST" action="/instructor/instance/{{ 'stop' if ex.state == 'running' else 'start' }}" class="w-full">
                         <input type="hidden" name="instance_id" value="{{ ex.instance_id }}">
                         {% if ex.state == "running" %}
@@ -123,12 +135,18 @@
                 <tr class="text-xs text-gray-600 tracking-wide">
                     <th class="px-4 py-3 text-left">หัวข้อ</th>
                     <th class="px-4 py-3 text-left">คำอธิบาย</th>
+                    <th class="px-4 py-3 text-center">สถานะ</th>
                     <th class="px-4 py-3 text-right">การจัดการ</th>
                 </tr>
                 {% for exercise in exercises %}
                 <tr class="border-t">
                     <td class="px-4 py-3 text-left text-gray-800 whitespace-nowrap">{{ exercise.title }}</td>
                     <td class="px-4 py-3 text-left text-gray-800 whitespace-nowrap">{{ exercise.description }}</td>
+                    {% if exercise.status == "available" %}
+                    <td class="text-center whitespace-nowrap"><span class="text-xs px-3 py-1.5 rounded-full bg-green-600 text-white">เปิดอยู่</span></td>
+                    {% else %}
+                    <td class="text-center whitespace-nowrap"><span class="text-xs px-3 py-1.5 rounded-full bg-red-600 text-white">ปิดอยู่</span></td>
+                    {% endif %}
                     <td class="px-4 py-3 text-right">
                         <div class="flex justify-end gap-2">
                             {% if exercise.status != "failed" and not ex %}
