@@ -276,3 +276,76 @@ def keep_only_projects(base: str, auth: httpx.BasicAuth, keep_ids: list[str]) ->
     r = httpx.get(f"{base}/projects", auth=auth, timeout=30.0)
     r.raise_for_status()
     return [p["project_id"] for p in r.json()]
+
+
+def get_vm_target_host(instance_rec: dict) -> str:
+    """เลือก IP ที่จะใช้เชื่อมต่อ console ไปยัง VM (private_ip หรือ public_ip)"""
+    settings = get_settings()
+    priv = instance_rec.get("private_ip")
+    pub = instance_rec.get("public_ip")
+    if settings.gns3_prefer_private_ip and priv:
+        return priv
+    return pub or priv or "127.0.0.1"
+
+
+def get_project_nodes_map(
+    instance_rec: dict, project_id: Optional[str] = None
+) -> tuple[str, dict[str, dict]]:
+    """
+    ดึงรายการ node ในโปรเจ็คของ GNS3
+    คืนค่า (project_id, dict ของ node โดย key คือ lowercase node name)
+    หากไม่ระบุ project_id จะใช้โปรเจ็คที่เปิดอยู่ หรือเปิดโปรเจ็คแรกให้อัตโนมัติ
+    """
+    base, auth = _find_base(instance_rec)
+    try:
+        pr = httpx.get(f"{base}/projects", auth=auth, timeout=15.0)
+        pr.raise_for_status()
+        projects = pr.json()
+    except httpx.HTTPError as e:
+        raise HTTPException(
+            status_code=502, detail=f"อ่านโปรเจ็คจาก GNS3 บน VM ไม่ได้: {e}"
+        ) from e
+
+    if not projects:
+        raise HTTPException(status_code=400, detail="ไม่พบโปรเจ็คใน GNS3 บน VM นี้")
+
+    target_pid = project_id
+    if not target_pid:
+        opened = [p for p in projects if p.get("status") == "opened"]
+        if opened:
+            target_pid = opened[0]["project_id"]
+        else:
+            target_pid = projects[0]["project_id"]
+
+    # ตรวจสอบว่าโปรเจ็คเปิดอยู่หรือไม่ ถ้าปิดอยู่ให้เปิดก่อน
+    proj_info = next((p for p in projects if p["project_id"] == target_pid), None)
+    if proj_info and proj_info.get("status") != "opened":
+        try:
+            httpx.post(f"{base}/projects/{target_pid}/open", auth=auth, timeout=15.0)
+        except Exception:
+            pass
+
+    try:
+        nr = httpx.get(f"{base}/projects/{target_pid}/nodes", auth=auth, timeout=20.0)
+        nr.raise_for_status()
+        nodes = nr.json()
+    except httpx.HTTPError as e:
+        raise HTTPException(
+            status_code=502, detail=f"อ่านรายการ node จาก GNS3 ไม่ได้: {e}"
+        ) from e
+
+    node_map = {n["name"].strip().lower(): n for n in nodes if "name" in n}
+    return target_pid, node_map
+
+
+def start_node_sync(instance_rec: dict, project_id: str, node_id: str) -> None:
+    """สั่งเปิด node ใน GNS3 ทันที"""
+    base, auth = _find_base(instance_rec)
+    try:
+        httpx.post(
+            f"{base}/projects/{project_id}/nodes/{node_id}/start",
+            auth=auth,
+            timeout=15.0,
+        )
+    except Exception:
+        pass

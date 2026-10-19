@@ -72,6 +72,65 @@ class TokenResponse(BaseModel):
 # EXERCISE MODELS
 # ==========================================
 
+class GradingCheckType(str, Enum):
+    PING = "ping"
+    VPCS_SHOW_IP = "vpcs_show_ip"
+    CLI_COMMAND = "cli_command"
+
+
+class TestCase(BaseModel):
+    id: str = Field(..., description="รหัสการทดสอบ เช่น test_1")
+    title: str = Field(..., description="ชื่อการทดสอบ เช่น ตรวจสอบการ ping 8.8.8.8 จาก PC1")
+    node: str = Field(..., description="ชื่อ node ใน GNS3 เช่น PC1, R1, Switch1")
+    type: GradingCheckType = Field(
+        default=GradingCheckType.PING,
+        description="ประเภทการตรวจสอบ: ping, vpcs_show_ip, cli_command",
+    )
+    # สำหรับ ping:
+    target: Optional[str] = Field(None, description="IP หรือ Hostname ปลายทาง (สำหรับ ping)")
+    count: int = Field(default=3, ge=1, le=10, description="จำนวน packet ที่ ping")
+    expected: str = Field(default="success", description="ผลที่คาดหวัง: success หรือ unreachable")
+    # สำหรับ vpcs_show_ip:
+    expected_ip: Optional[str] = Field(None, description="IP address ที่คาดหวัง")
+    expected_mask: Optional[str] = Field(None, description="Subnet mask/prefix เช่น 24 หรือ 255.255.255.0")
+    expected_gateway: Optional[str] = Field(None, description="Gateway IP ที่คาดหวัง")
+    # สำหรับ cli_command:
+    command: Optional[str] = Field(None, description="คำสั่ง CLI เช่น show ip interface brief หรือ show ip route")
+    contains: Optional[list[str]] = Field(None, description="ข้อความที่ต้องพบในผลลัพธ์ (ทุกคำ)")
+    not_contains: Optional[list[str]] = Field(None, description="ข้อความที่ต้องไม่พบในผลลัพธ์")
+    # คะแนน:
+    points: int = Field(default=10, ge=1, description="คะแนนของการทดสอบนี้")
+
+
+class GradingConfig(BaseModel):
+    auto_start_nodes: bool = Field(default=True, description="เปิด node อัตโนมัติถ้า node ปิดอยู่ก่อนตรวจ")
+    timeout_seconds: int = Field(default=12, ge=3, le=60, description="เวลา timeout ต่อการทดสอบ (วินาที)")
+    test_cases: list[TestCase] = Field(default_factory=list, description="รายการแบบทดสอบ")
+
+
+class TestCaseResult(BaseModel):
+    test_id: str
+    title: str
+    node: str
+    status: str = Field(..., description="สถานะ: PASSED | FAILED | ERROR")
+    points_awarded: int
+    max_points: int
+    message: str
+    output_snippet: Optional[str] = None
+
+
+class GradeSubmissionResponse(BaseModel):
+    exercise_id: str
+    instance_id: str
+    total_score: int
+    max_score: int
+    percentage: float
+    passed_count: int
+    total_count: int
+    results: list[TestCaseResult]
+    checked_at: str
+
+
 class ExerciseBase(BaseModel):
     title: str = Field(..., description="ชื่อแบบฝึกหัด Lab")
     description: Optional[str] = Field(None, description="คำอธิบายแบบฝึกหัด หรือโจทย์")
@@ -102,6 +161,9 @@ class ExerciseCreate(BaseModel):
     ami_id: Optional[str] = Field(
         None, description="AMI ID (ถ้ามี AMI อยู่แล้วและไม่ต้องการทำ Snapshot ใหม่)"
     )
+    grading_config: Optional[GradingConfig] = Field(
+        None, description="การตั้งค่าโจทย์และการตรวจอัตโนมัติ (Test Cases)"
+    )
 
     @field_validator(
         "instance_id", "project_name", "project_id", "ami_id", mode="before"
@@ -131,6 +193,7 @@ class ExerciseResponse(ExerciseBase):
     project_names: Optional[list[str]] = Field(None, description="รายชื่อโปรเจ็ค GNS3 ทั้งหมดในต้นแบบ VM")
     project_count: Optional[int] = Field(None, description="จำนวนโปรเจ็คในต้นแบบ VM")
     status_detail: Optional[str] = Field(None, description="ความคืบหน้าตอน pending / สาเหตุเมื่อ failed")
+    grading_config: Optional[GradingConfig] = Field(None, description="กติกาการตรวจอัตโนมัติ")
     created_at: str
 
 

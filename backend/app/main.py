@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import Depends, BackgroundTasks, FastAPI, HTTPException, Query, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 
-from app import ec2_service, exercise_service, gns3_service, s3_service
+from app import ec2_service, exercise_service, gns3_service, grading_service, s3_service
 from app.auth import (
     create_access_token,
     get_current_admin_user,
@@ -31,6 +31,7 @@ from app.dynamodb_service import (
     list_all_instances,
     list_all_users,
     list_instances_by_user,
+    update_exercise_fields,
     update_exercise_status,
     update_user_fields,
 )
@@ -41,6 +42,8 @@ from app.models import (
     ExerciseListResponse,
     ExerciseResponse,
     ExtendTimerResponse,
+    GradeSubmissionResponse,
+    GradingConfig,
     InstanceActionResponse,
     InstanceInfo,
     InstanceListResponse,
@@ -259,6 +262,12 @@ def create_exercise(
     - หากระบุ ami_id: ผูกกับ AMI ที่มีอยู่แล้วโดยตรง (ไม่ทำต้นแบบใหม่)
     - คำแนะนำ: ควร stop node ทุกตัวใน GNS3 ก่อนสร้าง เพื่อให้ snapshot สมบูรณ์
     """
+    grading_dict = (
+        payload.grading_config.model_dump(exclude_none=True)
+        if payload.grading_config
+        else None
+    )
+
     if payload.ami_id:
         # ผูกกับ AMI ที่มีอยู่แล้ว: ต้องเป็น AMI จริงและใช้งานได้ (กัน ami_id มั่ว เช่น "string")
         ami_state = ec2_service.get_image_status(payload.ami_id)
@@ -277,6 +286,7 @@ def create_exercise(
             ami_id=payload.ami_id,
             status=ami_state,  # available | pending (GET /exercises/{id} จะ sync เป็น available เอง)
             is_active=True,
+            grading_config=grading_dict,
         )
         return ExerciseResponse(**item)
 
@@ -314,6 +324,7 @@ def create_exercise(
         project_names=project_names,
         status="pending",
         is_active=True,
+        grading_config=grading_dict,
     )
     if use_project_files:
         # export แต่ละโปรเจ็คเป็น .gns3project -> S3 (ทุกโปรเจ็คถ้าไม่ได้เลือก)
@@ -385,6 +396,118 @@ def delete_exercise(
         "message": f"Exercise '{exercise_id}' deleted successfully.",
         "terminated_instances": terminated,
     }
+
+
+# ==========================================
+# AUTO-GRADING ENDPOINTS
+# ==========================================
+
+@app.put("/exercises/{exercise_id}/grading", response_model=GradingConfig)
+def set_exercise_grading_config(
+    exercise_id: str,
+    payload: GradingConfig,
+    current_user: UserInDB = Depends(get_current_instructor_or_admin),
+):
+    """
+    ตั้งค่าหรือแก้ไขกติกาการตรวจอัตโนมัติ (Test Cases) สำหรับแบบฝึกหัด Lab (เฉพาะ Instructor หรือ Admin)
+    """
+    rec = get_exercise_record(exercise_id)
+    if not rec:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Exercise '{exercise_id}' not found.",
+        )
+    cfg_dict = payload.model_dump(exclude_none=True)
+    update_exercise_fields(exercise_id, {"grading_config": cfg_dict})
+    return payload
+
+
+@app.get("/exercises/{exercise_id}/grading", response_model=GradingConfig)
+def get_exercise_grading_config(
+    exercise_id: str,
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """
+    ดูรายการ Test Cases ของแบบฝึกหัด Lab
+    """
+    rec = get_exercise_record(exercise_id)
+    if not rec:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Exercise '{exercise_id}' not found.",
+        )
+    cfg = rec.get("grading_config")
+    if not cfg:
+        return GradingConfig(test_cases=[])
+    return GradingConfig(**cfg)
+
+
+@app.post("/instances/{instance_id}/grade", response_model=GradeSubmissionResponse)
+async def grade_instance_submission(
+    instance_id: str,
+    exercise_id: Optional[str] = Query(None, description="รหัสแบบฝึกหัด (ถ้าไม่ระบุ จะดึงจากข้อมูลของ instance)"),
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """
+    สั่งตรวจ Lab อัตโนมัติบน VM ที่กำลังทำงานอยู่
+    - เชื่อมต่อไปยัง Console ของ Node แต่ละตัวตาม Test Cases
+    - คำนวณคะแนนและสรุปผลการตรวจรายข้อ
+    """
+    _verify_instance_ownership(instance_id, current_user)
+    inst_rec = get_instance_record(instance_id)
+    if not inst_rec:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"ไม่พบข้อมูล instance {instance_id}",
+        )
+
+    inst_state = inst_rec.get("state")
+    if inst_state != "running":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Instance อยู่ในสถานะ '{inst_state}' ไม่สามารถตรวจได้ (ต้องเป็น 'running')",
+        )
+
+    target_ex_id = exercise_id or inst_rec.get("exercise_id")
+    if not target_ex_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="ไม่พบ exercise_id ที่ผูกกับ instance นี้ กรุณาระบุ exercise_id ใน query parameter",
+        )
+
+    ex_rec = get_exercise_record(target_ex_id)
+    if not ex_rec:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"ไม่พบข้อมูลแบบฝึกหัด '{target_ex_id}'",
+        )
+
+    raw_config = ex_rec.get("grading_config")
+    if not raw_config or not raw_config.get("test_cases"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="แบบฝึกหัดนี้ยังไม่ได้ตั้งค่า Test Cases สำหรับการตรวจอัตโนมัติ",
+        )
+
+    grading_config = GradingConfig(**raw_config)
+    return await grading_service.grade_instance(inst_rec, grading_config, target_ex_id)
+
+
+@app.post("/exercises/{exercise_id}/grade", response_model=GradeSubmissionResponse)
+async def grade_my_exercise(
+    exercise_id: str,
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """
+    Endpoint สะดวกสำหรับนักศึกษา: ตรวจแบบฝึกหัด Lab ปัจจุบันของตนเองทันที
+    """
+    active_inst_id = current_user.active_exercise_instance_id or current_user.active_instance_id
+    if not active_inst_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="คุณยังไม่มี VM ที่กำลังใช้งานอยู่สำหรับแบบฝึกหัดนี้ กรุณาเปิด Lab ก่อนกดส่งตรวจ",
+        )
+    return await grade_instance_submission(active_inst_id, exercise_id=exercise_id, current_user=current_user)
 
 
 # ==========================================

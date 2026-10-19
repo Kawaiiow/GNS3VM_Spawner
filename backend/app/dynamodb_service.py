@@ -565,6 +565,7 @@ def create_exercise_record(
     s3_key: Optional[str] = None,
     project_name: Optional[str] = None,
     project_names: Optional[list[str]] = None,
+    grading_config: Optional[dict] = None,
 ) -> dict:
     table = get_exercises_table()
     exercise_id =  exercise_id or str(uuid.uuid4())
@@ -590,6 +591,8 @@ def create_exercise_record(
     if project_names:
         item["project_names"] = list(project_names)
         item["project_count"] = len(project_names)
+    if grading_config:
+        item["grading_config"] = grading_config
     try:
         table.put_item(Item=item)
         return item
