@@ -147,11 +147,39 @@ for i in $(seq 1 150); do
   sleep 2
 done
 __IMAGES__
+__TEMPLATES__
 __IMPORTS__
 """
 
 # ดาวน์โหลด image (IOS/IOU/QEMU) จาก S3 ลง images dir ของ GNS3 "ก่อน" import โปรเจ็ค
 # (ชื่อไฟล์ผ่านการตรวจ A-Za-z0-9._- มาแล้วตอน export; ข้ามถ้ามีไฟล์อยู่แล้ว)
+# สร้าง GNS3 template (เช่น QEMU VM template) คืนจาก templates.json ผ่าน POST /v2/templates
+# (ทำหลังโหลด image ก่อน import โปรเจ็ค; template ไหนสร้างไม่ได้จะพิมพ์สาเหตุลง log แล้วข้ามไป)
+_GNS3_TEMPLATES_TEMPLATE = r"""
+if curl -fsSL --retry 3 -o /tmp/templates.json "__URL__"; then
+python3 - "$AUTH" "$API" <<'PY'
+import base64, json, sys, urllib.error, urllib.request
+auth, api = sys.argv[1], sys.argv[2]
+hdr = {
+    "Content-Type": "application/json",
+    "Authorization": "Basic " + base64.b64encode(auth.encode()).decode(),
+}
+for t in json.load(open("/tmp/templates.json")):
+    req = urllib.request.Request(api + "/templates", data=json.dumps(t).encode(), headers=hdr, method="POST")
+    try:
+        urllib.request.urlopen(req, timeout=30)
+        print("template ok:", t.get("name"))
+    except urllib.error.HTTPError as e:
+        print("template FAILED:", t.get("name"), e.code, e.read()[:300])
+    except Exception as e:
+        print("template FAILED:", t.get("name"), e)
+PY
+else
+  echo "templates download FAILED"
+fi
+rm -f /tmp/templates.json
+"""
+
 _GNS3_IMAGE_ONE_TEMPLATE = r"""
 D="__IMG_DIR__/__KIND__"
 install -d -o __OWNER__ -g __OWNER__ "$D"
@@ -202,6 +230,7 @@ def _build_import_user_data(
     names: Optional[list[str]] = None,
     fallback_title: Optional[str] = None,
     images: Optional[list[dict]] = None,
+    templates_key: Optional[str] = None,
 ) -> str:
     """names = ชื่อโปรเจ็คเรียงตาม s3_keys (ถ้าไม่มีใช้ fallback_title); images = [{"kind","filename","s3_key"}]"""
     settings = get_settings()
@@ -221,11 +250,17 @@ def _build_import_user_data(
         .replace("__OWNER__", settings.gns3_images_owner)
         for img in (images or [])
     ]
+    template_block = (
+        _GNS3_TEMPLATES_TEMPLATE.replace("__URL__", s3_service.presign_get(templates_key))
+        if templates_key
+        else ""
+    )
     return (
         _GNS3_IMPORT_USER_DATA_TEMPLATE.replace("__USER__", user)
         .replace("__PASSWORD__", password)
         .replace("__PORT__", str(settings.gns3_api_port))
         .replace("__IMAGES__", "".join(image_blocks))
+        .replace("__TEMPLATES__", template_block)
         .replace("__IMPORTS__", "".join(blocks))
     )
 
@@ -310,6 +345,7 @@ def launch_instance(
     resolved_ami = ami_id
     exercise_s3_keys: list[str] = []
     exercise_images: list[dict] = []
+    exercise_templates_key: Optional[str] = None
     exercise_project_names: list[str] = []
     exercise_title: Optional[str] = None
 
@@ -350,6 +386,7 @@ def launch_instance(
                     )
             exercise_s3_keys = s3_keys
             exercise_images = list(exercise.get("images") or [])
+            exercise_templates_key = exercise.get("templates_key")
             exercise_project_names = list(exercise.get("project_names") or [])
             if not settings.gns3_set_vm_password:
                 raise HTTPException(
@@ -420,6 +457,7 @@ def launch_instance(
                     names=exercise_project_names,
                     fallback_title=exercise_title,
                     images=exercise_images,
+                    templates_key=exercise_templates_key,
                 )
             except Exception as e:
                 _rollback()

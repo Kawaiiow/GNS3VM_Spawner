@@ -47,6 +47,13 @@ def build_exercise_key(exercise_id: str, project_id: Optional[str] = None) -> st
     return f"{prefix}/{name}" if prefix else name
 
 
+def build_templates_key(exercise_id: str) -> str:
+    """key ของไฟล์ templates.json (GNS3 template ที่ใช้กับแบบฝึกหัดนี้)"""
+    prefix = get_settings().snapshots_prefix.strip("/")
+    name = f"{exercise_id}/templates.json"
+    return f"{prefix}/{name}" if prefix else name
+
+
 def build_image_key(kind: str, filename: str) -> str:
     """key ของ image ใน library กลาง (kind = IOS | IOU | QEMU) ใช้ร่วมกันหลาย exercise"""
     prefix = get_settings().snapshots_prefix.strip("/")
@@ -74,6 +81,10 @@ def upload_file(path: str, key: str) -> None:
     get_s3_client().upload_file(
         path, _bucket(), key, ExtraArgs={"ContentType": "application/zip"}
     )
+
+
+def put_bytes(data: bytes, key: str, content_type: str = "application/json") -> None:
+    get_s3_client().put_object(Bucket=_bucket(), Key=key, Body=data, ContentType=content_type)
 
 
 def presign_get(key: str, expires: Optional[int] = None) -> str:

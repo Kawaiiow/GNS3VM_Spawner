@@ -156,6 +156,49 @@ def collect_project_images(instance_rec: dict, project_id: str) -> list[dict]:
     return list(found.values())
 
 
+def _template_image_names(t: dict) -> set[str]:
+    kind = t.get("template_type")
+    if kind == "dynamips":
+        paths = [t.get("image")]
+    elif kind == "iou":
+        paths = [t.get("path")]
+    elif kind == "qemu":
+        paths = [t.get(f) for f in _QEMU_IMAGE_FIELDS]
+    else:
+        paths = []
+    return {os.path.basename(str(p).replace("\\", "/")) for p in paths if p}
+
+
+def collect_templates(instance_rec: dict, project_ids: list[str], images: list[dict]) -> list[dict]:
+    """
+    template (qemu/dynamips/iou, ไม่รวม builtin) ที่เกี่ยวกับแบบฝึกหัดนี้:
+    node ในโปรเจ็คอ้างถึง (template_id) หรือใช้ image ตัวเดียวกับที่สำรองไว้
+    GNS3 เก็บ template ใน controller config ไม่ได้อยู่ในไฟล์ .gns3project จึงต้องดึงผ่าน API
+    """
+    base, auth = _find_base(instance_rec)
+    wanted = {i["filename"] for i in images}
+    try:
+        tr = httpx.get(f"{base}/templates", auth=auth, timeout=30.0)
+        tr.raise_for_status()
+        used_ids: set[str] = set()
+        for pid in project_ids:
+            nr = httpx.get(f"{base}/projects/{pid}/nodes", auth=auth, timeout=30.0)
+            nr.raise_for_status()
+            used_ids |= {n.get("template_id") for n in nr.json() if n.get("template_id")}
+    except httpx.HTTPError as e:
+        raise RuntimeError(f"อ่าน template จาก GNS3 ไม่ได้: {e}") from e
+
+    result: list[dict] = []
+    for t in tr.json():
+        if t.get("builtin") or t.get("template_type") not in ("qemu", "dynamips", "iou"):
+            continue
+        if t.get("template_id") in used_ids or (_template_image_names(t) & wanted):
+            t = {k: v for k, v in t.items() if k != "builtin"}
+            t["compute_id"] = "local"   # บน VM นักศึกษา GNS3 server รันแบบ local
+            result.append(t)
+    return result
+
+
 def export_project_to_file(instance_rec: dict, project_id: str, dest_path: str) -> None:
     """
     export โปรเจ็คจาก GNS3 ของ VM อาจารย์ (GET /v2/projects/{id}/export) เขียนลงไฟล์ .gns3project (zip)

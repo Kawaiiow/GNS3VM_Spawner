@@ -125,6 +125,8 @@ class ExerciseResponse(ExerciseBase):
     images: Optional[list[dict]] = Field(
         None, description="image (IOS/IOU/QEMU) ที่โปรเจ็คใช้ พร้อม S3 key ใน library (VM ใหม่จะโหลดก่อน import โปรเจ็ค)"
     )
+    templates_key: Optional[str] = Field(None, description="S3 key ของ templates.json (GNS3 template ที่จะสร้างคืนบน VM ใหม่)")
+    template_names: Optional[list[str]] = Field(None, description="ชื่อ GNS3 template ที่สำรองไว้")
     project_name: Optional[str] = Field(None, description="ชื่อโปรเจ็คในต้นแบบ (หลายโปรเจ็คคั่นด้วย ,)")
     project_names: Optional[list[str]] = Field(None, description="รายชื่อโปรเจ็ค GNS3 ทั้งหมดในต้นแบบ VM")
     project_count: Optional[int] = Field(None, description="จำนวนโปรเจ็คในต้นแบบ VM")

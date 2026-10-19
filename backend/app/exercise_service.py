@@ -12,6 +12,7 @@ exercise_service.py
 ตอนสร้าง VM นักศึกษา: ใช้ AMI นี้ได้ทันที ถ้า AMI หายไปจะกู้คืนจาก S3 ให้อัตโนมัติ (ดู ec2_service._ensure_template_ready)
 """
 
+import json
 import os
 import tempfile
 from typing import Optional
@@ -47,6 +48,9 @@ def build_exercise_export(
     """
     uploaded: list[str] = []
     stored_images: list[dict] = []
+    templates_key: Optional[str] = None
+    template_names: list[str] = []
+    note: Optional[str] = None
     total = len(selected_projects)
     try:
         # 0) สำรอง image (IOS/IOU/QEMU) ของ node ที่โปรเจ็คใช้ขึ้น S3 library กลาง
@@ -63,6 +67,21 @@ def build_exercise_export(
                     f"กำลังสำรอง image {len(wanted)} ไฟล์ขึ้น S3 (อาจใช้เวลาหลายนาที)",
                 )
                 stored_images = image_service.sync_images_to_s3(instance_rec, list(wanted.values()))
+
+        # 0.5) GNS3 template (เช่น QEMU VM template) -> templates.json บน S3 (best-effort)
+        #      VM นักศึกษาจะสร้าง template เหล่านี้คืนให้ตอน first boot
+        try:
+            tpls = gns3_service.collect_templates(
+                instance_rec, [p["project_id"] for p in selected_projects], stored_images
+            )
+            if tpls:
+                _progress(exercise_id, f"กำลังสำรอง template {len(tpls)} รายการขึ้น S3")
+                templates_key = s3_service.build_templates_key(exercise_id)
+                s3_service.put_bytes(json.dumps(tpls, ensure_ascii=False).encode("utf-8"), templates_key)
+                template_names = [x.get("name") or x.get("template_id") for x in tpls]
+        except Exception as e:  # noqa: BLE001
+            templates_key, template_names = None, []
+            note = f"สำรอง template ไม่สำเร็จ (โปรเจ็คและ image ยังใช้ได้): {_error_text(e)}"
 
         with tempfile.TemporaryDirectory(prefix="netlab-export-") as tmp:
             for idx, p in enumerate(selected_projects, start=1):
@@ -82,11 +101,16 @@ def build_exercise_export(
         fields: dict = {"s3_keys": uploaded, "s3_key": uploaded[0]}
         if stored_images:
             fields["images"] = stored_images  # [{"kind","filename","s3_key"}] ให้ VM ใหม่โหลดก่อน import
+        if templates_key:
+            fields["templates_key"] = templates_key
+            fields["template_names"] = template_names
         update_exercise_fields(exercise_id, fields)
-        update_exercise_status(exercise_id, "available")
+        update_exercise_status(exercise_id, "available", detail=note)
     except Exception as e:  # noqa: BLE001 - ต้องจับทุกอย่างเพื่อไม่ให้ค้าง pending
         for key in uploaded:
             s3_service.delete_object(key)
+        if templates_key:
+            s3_service.delete_object(templates_key)
         try:
             update_exercise_status(exercise_id, "failed", detail=_error_text(e))
         except Exception:  # noqa: BLE001
