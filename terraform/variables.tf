@@ -136,6 +136,25 @@ variable "expose_backend_port" {
   default     = false
 }
 
+variable "certificate_arn" {
+  description = "ARN ของ SSL/TLS Certificate ใน AWS Certificate Manager (ACM) หากเว้นว่างไว้ ระบบจะสร้าง self-signed certificate และ import เข้า ACM ให้อัตโนมัติ"
+  type        = string
+  default     = ""
+}
+
+variable "ssl_policy" {
+  description = "SSL Policy สำหรับ HTTPS Listener บน ALB"
+  type        = string
+  default     = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+}
+
+variable "redirect_http_to_https" {
+  description = "เปลี่ยนเส้นทาง HTTP (พอร์ต 80) ไปยัง HTTPS (พอร์ต 443) บน ALB โดยอัตโนมัติ"
+  type        = bool
+  default     = true
+}
+
+
 
 variable "gns3_export_include_images" {
   type    = bool

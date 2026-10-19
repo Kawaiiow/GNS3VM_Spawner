@@ -11,6 +11,8 @@
 # backend_instance_type   = "t3.small"
 # max_concurrent_instances = ตามต้องการ
 # expose_backend_port = true   # เปิด 8000 บน ALB เฉพาะ admin_cidr ให้ terraform destroy เรียก API ลบ VM/AMI <optional>
+# certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" # ว่างไว้ = สร้าง self-signed cert และ import เข้า ACM อัตโนมัติ
+# redirect_http_to_https = true # redirect HTTP (80) -> HTTPS (443) อัตโนมัติ
 
 # base_ami_id = "ami-xxxxxxxxxxxxxxxxx"   # ว่างไว้ = ใช้ netlab-gns3-base* ล่าสุดในบัญชี
 # key_name    = "vockey"

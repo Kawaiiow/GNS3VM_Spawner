@@ -203,7 +203,10 @@ resource "aws_autoscaling_group" "frontend" {
     propagate_at_launch = true
   }
 
-  depends_on = [aws_lb_listener.public_http]
+  depends_on = [
+    aws_lb_listener.public_http,
+    aws_lb_listener.public_https,
+  ]
 }
 
 # ตอน destroy: เรียก API ของ web (admin login -> POST /admin/instances/terminate-all)

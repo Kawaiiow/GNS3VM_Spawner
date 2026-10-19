@@ -1,7 +1,18 @@
 output "web_url" {
-  description = "URL เปิดเว็บ (ผ่าน ALB สาธารณะ port 80)"
+  description = "URL เปิดเว็บ HTTPS (ผ่าน ALB สาธารณะ port 443)"
+  value       = "https://${aws_lb.public.dns_name}"
+}
+
+output "web_http_url" {
+  description = "URL เปิดเว็บ HTTP (ผ่าน ALB สาธารณะ port 80 - redirect ไป HTTPS)"
   value       = "http://${aws_lb.public.dns_name}"
 }
+
+output "ssl_certificate_arn" {
+  description = "ARN ของ Certificate ที่ใช้งานบน ALB"
+  value       = local.alb_certificate_arn
+}
+
 
 output "alb_dns_name" {
   value = aws_lb.public.dns_name
