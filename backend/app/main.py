@@ -1,11 +1,14 @@
+import csv
+import io
 import uuid
 from datetime import datetime
 from typing import Optional
 
 from fastapi import Depends, BackgroundTasks, FastAPI, HTTPException, Query, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
-from app import ec2_service, exercise_service, gns3_service, s3_service
+from app import ec2_service, exercise_service, gns3_service, grader_service, s3_service
 from app.auth import (
     create_access_token,
     get_current_admin_user,
@@ -23,6 +26,7 @@ from app.dynamodb_service import (
     delete_user_record,
     get_exercise_record,
     get_instance_record,
+    get_submission_record,
     get_user_by_id,
     get_user_by_identifier,
     get_user_by_member_id,
@@ -31,6 +35,8 @@ from app.dynamodb_service import (
     list_all_instances,
     list_all_users,
     list_instances_by_user,
+    list_submissions_by_exercise,
+    list_submissions_by_user,
     update_exercise_status,
     update_user_fields,
 )
@@ -41,12 +47,16 @@ from app.models import (
     ExerciseListResponse,
     ExerciseResponse,
     ExtendTimerResponse,
+    GradingReportResponse,
     InstanceActionResponse,
     InstanceInfo,
     InstanceListResponse,
     LaunchInstanceRequest,
     LoginRequest,
+    RubricUpdateRequest,
     SetTimerRequest,
+    SubmissionListResponse,
+    SubmissionRecord,
     TokenResponse,
     UserCreate,
     UserInDB,
@@ -553,6 +563,151 @@ def admin_delete_all_images(
     - ไฟล์สำรองบน S3 ไม่ถูกลบ: แบบฝึกหัดที่ยังอยู่ใน DynamoDB จะกู้คืนจาก S3 ให้เองตอนสร้าง VM
     """
     return ec2_service.deregister_all_project_images()
+
+
+# ==========================================
+# AUTOMATED GRADING & SUBMISSIONS ENDPOINTS
+# ==========================================
+
+@app.post("/instances/{instance_id}/grade", response_model=GradingReportResponse)
+def grade_instance_practice(
+    instance_id: str,
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """
+    ตรวจแบบฝึกหัดโหมดทดสอบฝีมือ (Practice Check)
+    - รันการตรวจภายใน VM ผ่าน AWS SSM
+    - ตรวจสอบทั้ง configuration และ functional connectivity
+    - ไม่บันทึกคะแนนเป็นทางการ นักศึกษาสามารถกดตรวจได้ไม่จำกัด
+    """
+    return grader_service.run_grading_session(
+        instance_id=instance_id,
+        current_user=current_user.model_dump(),
+        mode="practice",
+    )
+
+
+@app.post("/instances/{instance_id}/submit", response_model=GradingReportResponse)
+def grade_instance_submit(
+    instance_id: str,
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """
+    ส่งแบบฝึกหัดเป็นทางการ (Formal Submission)
+    - ตรวจสอบโควตาจำนวนครั้งที่ส่งได้ (max_attempts)
+    - บันทึกคะแนนและรายงานผลลงใน DynamoDB (netlab_submissions)
+    """
+    return grader_service.run_grading_session(
+        instance_id=instance_id,
+        current_user=current_user.model_dump(),
+        mode="submit",
+    )
+
+
+@app.get("/exercises/{exercise_id}/rubric")
+def get_exercise_rubric(
+    exercise_id: str,
+    current_user: UserInDB = Depends(get_current_instructor_or_admin),
+):
+    """ดึงข้อมูลเกณฑ์การตรวจ (Rubric) ของแบบฝึกหัด (เฉพาะ Instructor/Admin)"""
+    return grader_service.get_exercise_rubric(exercise_id)
+
+
+@app.put("/exercises/{exercise_id}/rubric")
+def update_exercise_rubric(
+    exercise_id: str,
+    payload: RubricUpdateRequest,
+    current_user: UserInDB = Depends(get_current_instructor_or_admin),
+):
+    """
+    บันทึกหรืออัปเดตเกณฑ์การตรวจ (Rubric) ของแบบฝึกหัด (เฉพาะ Instructor/Admin)
+    - รองรับทั้ง YAML และ JSON
+    - คอมไพล์และจัดเก็บลง S3 อัตโนมัติ
+    """
+    return grader_service.save_exercise_rubric(
+        exercise_id=exercise_id,
+        rubric_content=payload.rubric_yaml,
+        max_attempts=payload.max_attempts,
+        keep_score_policy=payload.keep_score_policy,
+        feedback_mode=payload.feedback_mode,
+        passing_score=payload.passing_score,
+    )
+
+
+@app.get("/exercises/{exercise_id}/submissions", response_model=SubmissionListResponse)
+def list_exercise_submissions(
+    exercise_id: str,
+    current_user: UserInDB = Depends(get_current_instructor_or_admin),
+):
+    """ดูรายการส่งงานของนักศึกษาทุกคนในแบบฝึกหัดนี้ (สำหรับ Instructor/Admin)"""
+    items = dynamodb_service.list_submissions_by_exercise(exercise_id)
+    submissions = [SubmissionRecord(**i) for i in items]
+    return SubmissionListResponse(
+        count=len(submissions),
+        exercise_id=exercise_id,
+        submissions=submissions,
+    )
+
+
+@app.get("/exercises/{exercise_id}/submissions/export")
+def export_exercise_submissions_csv(
+    exercise_id: str,
+    current_user: UserInDB = Depends(get_current_instructor_or_admin),
+):
+    """ดาวน์โหลดสมุดคะแนน (Gradebook) ของแบบฝึกหัดนี้เป็นไฟล์ CSV (สำหรับ Instructor/Admin)"""
+    items = dynamodb_service.list_submissions_by_exercise(exercise_id)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Submission ID",
+        "Student ID",
+        "Username",
+        "Full Name",
+        "Score",
+        "Max Score",
+        "Percentage",
+        "Passed",
+        "Attempt",
+        "Submitted At",
+    ])
+    for s in items:
+        writer.writerow([
+            s.get("submission_id", ""),
+            s.get("member_id", ""),
+            s.get("username", ""),
+            s.get("full_name", ""),
+            s.get("score", 0),
+            s.get("max_score", 100),
+            s.get("percentage", 0.0),
+            "PASS" if s.get("passed") else "FAIL",
+            s.get("attempt_number", 1),
+            s.get("submitted_at", ""),
+        ])
+    output.seek(0)
+    filename = f"exercise_{exercise_id[:8]}_grades.csv"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@app.get("/submissions/my", response_model=SubmissionListResponse)
+def get_my_submissions(
+    exercise_id: Optional[str] = None,
+    current_user: UserInDB = Depends(get_current_user),
+):
+    """ดูประวัติการส่งแบบฝึกหัดของตนเอง"""
+    items = dynamodb_service.list_submissions_by_user(
+        user_id=current_user.user_id,
+        exercise_id=exercise_id,
+    )
+    submissions = [SubmissionRecord(**i) for i in items]
+    return SubmissionListResponse(
+        count=len(submissions),
+        exercise_id=exercise_id,
+        submissions=submissions,
+    )
 
 
 # ==========================================

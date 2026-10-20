@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    {% include "component/head.html" %}
+    <title>กำหนดเกณฑ์การตรวจ (Rubric) - NetLab</title>
+</head>
+<body class="bg-gray-50">
+    {% include "component/navbar.html" %}
+    <div class="max-w-5xl min-h-screen mx-auto px-6 py-28">
+        <div class="flex items-center justify-between mb-6">
+            <div>
+                <a href="/instructor/dashboard" class="text-sm text-gray-500 hover:text-gray-800 transition-colors flex items-center gap-1 mb-2">
+                    &larr; กลับไปยังแดชบอร์ด
+                </a>
+                <h1 class="text-gray-800 text-3xl font-semibold">เกณฑ์การตรวจแบบฝึกหัดอัตโนมัติ (Grader Rubric)</h1>
+                <p class="text-gray-600 text-base mt-1">แบบฝึกหัด: <span class="font-medium text-gray-800">{{ exercise.title }}</span> (ID: <code class="text-xs bg-gray-200 px-2 py-0.5 rounded">{{ exercise.exercise_id[:8] }}</code>)</p>
+            </div>
+            <a href="/instructor/exercise/{{ exercise.exercise_id }}/submissions" class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm px-4 py-2.5 rounded-xl shadow-sm transition-colors">
+                ดูสมุดคะแนน &rarr;
+            </a>
+        </div>
+
+        {% if request.query_params.get("saved") %}
+        <div class="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-xl mb-6 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <span class="text-lg">✓</span>
+                <span>บันทึกเกณฑ์การตรวจสำเร็จ และคอมไพล์ลง S3 เรียบร้อยแล้ว</span>
+            </div>
+        </div>
+        {% endif %}
+
+        <form method="POST" action="/instructor/exercise/{{ exercise.exercise_id }}/rubric" class="space-y-6">
+            <!-- Settings Card -->
+            <div class="bg-white border rounded-xl shadow-sm p-6">
+                <h2 class="text-lg font-medium text-gray-800 mb-4">การตั้งค่าการส่งงาน & ผลตรวจ</h2>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div>
+                        <label class="block text-xs text-gray-600 mb-1 font-medium">เกณฑ์ผ่าน (Passing Score)</label>
+                        <input type="number" name="passing_score" value="{{ exercise.passing_score or 60 }}" min="0" max="1000" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"/>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-600 mb-1 font-medium">จำนวนครั้งส่งสูงสุด (0=ไม่จำกัด)</label>
+                        <input type="number" name="max_attempts" value="{{ exercise.max_attempts or 0 }}" min="0" max="100" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"/>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-600 mb-1 font-medium">การแสดงผลให้นักศึกษา</label>
+                        <select name="feedback_mode" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            <option value="detailed" {% if exercise.feedback_mode == 'detailed' %}selected{% endif %}>Detailed (แสดงผลตรวจ & คำใบ้)</option>
+                            <option value="checklist_only" {% if exercise.feedback_mode == 'checklist_only' %}selected{% endif %}>Checklist (แสดงข้อที่ผ่าน/ไม่ผ่าน)</option>
+                            <option value="score_only" {% if exercise.feedback_mode == 'score_only' %}selected{% endif %}>Score Only (แสดงเฉพาะคะแนนรวม)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-600 mb-1 font-medium">นโยบายเก็บคะแนน</label>
+                        <select name="keep_score_policy" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            <option value="highest" {% if exercise.keep_score_policy == 'highest' %}selected{% endif %}>Highest (ยึดคะแนนสูงสุด)</option>
+                            <option value="latest" {% if exercise.keep_score_policy == 'latest' %}selected{% endif %}>Latest (ยึดคะแนนครั้งล่าสุด)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Rubric Code Editor -->
+            <div class="bg-white border rounded-xl shadow-sm p-6">
+                <div class="flex items-center justify-between mb-3">
+                    <div>
+                        <h2 class="text-lg font-medium text-gray-800">เกณฑ์การตรวจ (YAML Rubric)</h2>
+                        <p class="text-xs text-gray-500">ระบุชื่อโหนดใน GNS3 (เช่น R1, SW1, PC1) คำสั่งตรวจ และคะแนนของแต่ละข้อ</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <button type="button" onclick="insertCiscoSample()" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg border transition-colors">
+                            + ตัวอย่าง Cisco IOS
+                        </button>
+                        <button type="button" onclick="insertLinuxSample()" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg border transition-colors">
+                            + ตัวอย่าง Linux Host
+                        </button>
+                    </div>
+                </div>
+
+                <textarea id="rubric_yaml" name="rubric_yaml" rows="22" class="w-full font-mono text-sm bg-gray-900 text-emerald-400 p-4 rounded-xl border border-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner" spellcheck="false">{{ rubric_yaml }}</textarea>
+            </div>
+
+            <div class="flex items-center justify-end gap-3">
+                <a href="/instructor/dashboard" class="px-5 py-2.5 rounded-xl border text-gray-700 bg-white hover:bg-gray-50 text-sm transition-colors">
+                    ยกเลิก
+                </a>
+                <button type="submit" class="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm shadow-md transition-colors">
+                    บันทึกเกณฑ์ตรวจ
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <script>
+    function insertCiscoSample() {
+        const sample = `
+  - id: "t_cisco_ospf"
+    name: "Cisco OSPF Configuration"
+    node: "R1"
+    device_type: "cisco"
+    points: 20
+    checks:
+      - type: "config_regex"
+        description: "Verify OSPF router process"
+        pattern: "router ospf\\\\s+\\\\d+"
+        hint: "Configure 'router ospf 1' on R1"
+      - type: "command_output"
+        command: "show ip ospf neighbor"
+        must_contain:
+          - "FULL"
+        hint: "Ensure OSPF adjacency with neighbor is in FULL state"
+`;
+        const ta = document.getElementById("rubric_yaml");
+        ta.value += sample;
+    }
+
+    function insertLinuxSample() {
+        const sample = `
+  - id: "t_linux_reachability"
+    name: "Linux Host Ping Test"
+    node: "PC1"
+    device_type: "linux"
+    points: 20
+    checks:
+      - type: "command_output"
+        command: "ping -c 3 192.168.1.1"
+        must_contain:
+          - "0% packet loss"
+        hint: "Check default gateway on PC1"
+`;
+        const ta = document.getElementById("rubric_yaml");
+        ta.value += sample;
+    }
+    </script>
+    {% include "component/footer.html" %}
+</body>
+</html>

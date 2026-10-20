@@ -69,6 +69,11 @@ def get_exercises_table():
         _tables["exercises"] = get_dynamodb_resource().Table(get_cached_settings().exercises_table_name)
     return _tables["exercises"]
 
+def get_submissions_table():
+    if "submissions" not in _tables:
+        _tables["submissions"] = get_dynamodb_resource().Table(get_cached_settings().submissions_table_name)
+    return _tables["submissions"]
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -705,3 +710,86 @@ def delete_exercise_record(exercise_id: str) -> None:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error deleting exercise from DynamoDB: {e.response['Error']['Message']}",
         )
+
+
+# ==========================================
+# SUBMISSIONS CRUD & GRADEBOOK
+# ==========================================
+
+def create_submission_record(data: dict) -> dict:
+    table = get_submissions_table()
+    sub_id = data.get("submission_id") or str(uuid.uuid4())
+    item = {
+        "submission_id": sub_id,
+        "submitted_at": data.get("submitted_at") or _now_iso(),
+        **data,
+    }
+    try:
+        table.put_item(Item=item)
+        return item
+    except ClientError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating submission in DynamoDB: {e.response['Error']['Message']}",
+        )
+
+
+def get_submission_record(submission_id: str) -> Optional[dict]:
+    table = get_submissions_table()
+    try:
+        res = table.get_item(Key={"submission_id": submission_id})
+        return res.get("Item")
+    except ClientError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error getting submission from DynamoDB: {e.response['Error']['Message']}",
+        )
+
+
+def list_submissions_by_exercise(exercise_id: str) -> list[dict]:
+    table = get_submissions_table()
+    try:
+        res = table.query(
+            IndexName="ExerciseIdIndex",
+            KeyConditionExpression=Key("exercise_id").eq(exercise_id),
+        )
+        items = res.get("Items", [])
+        # Sort descending by submitted_at
+        items.sort(key=lambda x: x.get("submitted_at", ""), reverse=True)
+        return items
+    except ClientError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error querying submissions for exercise: {e.response['Error']['Message']}",
+        )
+
+
+def list_submissions_by_user(user_id: str, exercise_id: Optional[str] = None) -> list[dict]:
+    table = get_submissions_table()
+    try:
+        res = table.query(
+            IndexName="UserIdIndex",
+            KeyConditionExpression=Key("user_id").eq(user_id),
+        )
+        items = res.get("Items", [])
+        if exercise_id:
+            items = [x for x in items if x.get("exercise_id") == exercise_id]
+        items.sort(key=lambda x: x.get("submitted_at", ""), reverse=True)
+        return items
+    except ClientError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error querying submissions for user: {e.response['Error']['Message']}",
+        )
+
+
+def count_user_exercise_attempts(user_id: str, exercise_id: str) -> int:
+    submissions = list_submissions_by_user(user_id, exercise_id=exercise_id)
+    return len(submissions)
+
+
+def get_user_best_submission(user_id: str, exercise_id: str) -> Optional[dict]:
+    submissions = list_submissions_by_user(user_id, exercise_id=exercise_id)
+    if not submissions:
+        return None
+    return max(submissions, key=lambda x: (x.get("score", 0), x.get("submitted_at", "")))

@@ -79,6 +79,12 @@ class ExerciseBase(BaseModel):
         None, description="AWS AMI ID ของต้นแบบ VM (ถ้า AMI ถูกลบ ระบบจะกู้คืนจาก S3 ให้เองตอนสร้าง VM)"
     )
     is_active: bool = Field(default=True, description="สถานะเปิดให้นักศึกษาใช้งานหรือไม่")
+    has_grading: bool = Field(default=False, description="มีระบบตรวจแบบฝึกหัดอัตโนมัติหรือไม่")
+    rubric_s3_key: Optional[str] = Field(None, description="S3 object key ของไฟล์ rubric.json")
+    max_attempts: int = Field(default=0, description="จำนวนครั้งสูงสุดที่ส่งได้ (0 = ไม่จำกัด)")
+    keep_score_policy: str = Field(default="highest", description="นโยบายเก็บคะแนน: highest | latest")
+    passing_score: int = Field(default=60, description="เกณฑ์คะแนนผ่านขั้นต่ำ")
+    feedback_mode: str = Field(default="detailed", description="ระดับการแสดงผลตรวจ: detailed | checklist_only | score_only")
 
 
 class ExerciseCreate(BaseModel):
@@ -241,3 +247,107 @@ class DashboardUserInfo(BaseModel):
     full_name: Optional[str] = None
     role: UserRole
     instances: list[DashboardInstance] = Field(default_factory=list)
+
+
+# ==========================================
+# AUTOMATED GRADER & RUBRIC MODELS
+# ==========================================
+
+class RubricCheck(BaseModel):
+    type: str = Field(..., description="config_regex | command_output | ping")
+    description: Optional[str] = Field(None, description="คำอธิบายการตรวจ")
+    pattern: Optional[str] = Field(None, description="Regex pattern สำหรับ config_regex")
+    command: Optional[str] = Field(None, description="CLI command ที่จะสั่งรัน")
+    must_contain: Optional[list[str]] = Field(default_factory=list, description="ข้อความ/Regex ที่ต้องมีในผลลัพธ์")
+    must_not_contain: Optional[list[str]] = Field(default_factory=list, description="ข้อความ/Regex ที่ต้องไม่มีในผลลัพธ์")
+    target_ip: Optional[str] = Field(None, description="IP ปลายทางสำหรับ ping")
+    repeat: Optional[int] = Field(5, description="จำนวนครั้งที่ ping")
+    min_success_rate: Optional[float] = Field(60.0, description="เปอร์เซ็นต์ขั้นต่ำที่ถือว่า ping ผ่าน")
+    negative: Optional[bool] = Field(False, description="ถ้า True ผลลัพธ์ต้องไม่ match pattern")
+    hint: Optional[str] = Field(None, description="คำใบ้เมื่อตรวจไม่ผ่าน")
+
+
+class RubricTask(BaseModel):
+    id: str = Field(..., description="Task identifier เช่น t1")
+    name: str = Field(..., description="ชื่อโจทย์ย่อย เช่น R1 GigabitEthernet0/0 IP Config")
+    node: str = Field(..., description="ชื่ออุปกรณ์ใน GNS3 เช่น R1, SW1, PC1")
+    device_type: Optional[str] = Field("cisco", description="cisco | linux")
+    points: int = Field(..., ge=1, description="คะแนนเต็มของข้อนี้")
+    checks: list[RubricCheck] = Field(..., min_length=1, description="รายการตรวจสอบย่อย")
+
+
+class RubricDefinition(BaseModel):
+    version: str = Field(default="1.0", description="Rubric schema version")
+    title: Optional[str] = Field(None, description="ชื่อชุดตรวจ")
+    max_score: int = Field(default=100, description="คะแนนเต็มรวม")
+    passing_score: int = Field(default=60, description="เกณฑ์ผ่าน")
+    feedback_mode: str = Field(default="detailed", description="detailed | checklist_only | score_only")
+    tasks: list[RubricTask] = Field(..., min_length=1, description="รายการโจทย์ทั้งหมด")
+    credentials: Optional[dict[str, dict]] = Field(default=None, description="รหัสผ่านอุปกรณ์ เช่น enable_password")
+
+
+class RubricUpdateRequest(BaseModel):
+    rubric_yaml: str = Field(..., description="เนื้อหา rubric ในรูปแบบ YAML หรือ JSON")
+    max_attempts: Optional[int] = Field(None, ge=0, description="จำนวนครั้งสูงสุดที่ส่งได้ (0 = ไม่จำกัด)")
+    keep_score_policy: Optional[str] = Field(None, description="highest | latest")
+    feedback_mode: Optional[str] = Field(None, description="detailed | checklist_only | score_only")
+    passing_score: Optional[int] = Field(None, ge=0)
+
+
+class GradeCheckResult(BaseModel):
+    type: str
+    passed: bool
+    description: Optional[str] = None
+    hint: Optional[str] = None
+    message: Optional[str] = None
+    details: Optional[str] = None
+
+
+class GradeTaskResult(BaseModel):
+    id: str
+    name: str
+    node: Optional[str] = None
+    points: int
+    max_points: int
+    status: str = Field(..., description="passed | failed")
+    checks: Optional[list[GradeCheckResult]] = None
+
+
+class GradingReportResponse(BaseModel):
+    status: str = Field(..., description="success | error")
+    score: int = 0
+    max_score: int = 100
+    percentage: float = 0.0
+    passed: bool = False
+    passing_score: int = 60
+    mode: str = Field(default="practice", description="practice | submit")
+    feedback_mode: str = Field(default="detailed", description="detailed | checklist_only | score_only")
+    tasks: Optional[list[GradeTaskResult]] = None
+    message: Optional[str] = None
+    error_code: Optional[str] = None
+    evaluated_at: Optional[str] = None
+    submission_id: Optional[str] = None
+    attempt_number: Optional[int] = None
+
+
+class SubmissionRecord(BaseModel):
+    submission_id: str
+    exercise_id: str
+    user_id: str
+    member_id: Optional[str] = None
+    username: Optional[str] = None
+    full_name: Optional[str] = None
+    instance_id: Optional[str] = None
+    score: int
+    max_score: int
+    percentage: float
+    passed: bool
+    attempt_number: int
+    submitted_at: str
+    tasks_summary: Optional[list[dict]] = None
+
+
+class SubmissionListResponse(BaseModel):
+    count: int
+    exercise_id: Optional[str] = None
+    submissions: list[SubmissionRecord]

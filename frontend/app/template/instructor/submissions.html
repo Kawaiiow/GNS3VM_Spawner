@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    {% include "component/head.html" %}
+    <title>สมุดคะแนน - {{ exercise.title or 'Exercise' }} - NetLab</title>
+</head>
+<body class="bg-gray-50">
+    {% include "component/navbar.html" %}
+    <div class="max-w-6xl min-h-screen mx-auto px-6 py-28">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+            <div>
+                <a href="/instructor/dashboard" class="text-sm text-gray-500 hover:text-gray-800 transition-colors flex items-center gap-1 mb-2">
+                    &larr; กลับไปยังแดชบอร์ด
+                </a>
+                <h1 class="text-gray-800 text-3xl font-semibold">สมุดคะแนนแบบฝึกหัด (Gradebook)</h1>
+                <p class="text-gray-600 text-base mt-1">แบบฝึกหัด: <span class="font-medium text-gray-800">{{ exercise.title }}</span></p>
+            </div>
+            <div class="flex gap-2">
+                <a href="/instructor/exercise/{{ exercise.exercise_id }}/rubric" class="px-4 py-2.5 rounded-xl border bg-white hover:bg-gray-50 text-gray-700 text-sm font-medium transition-colors shadow-sm">
+                    แก้ไขเกณฑ์ตรวจ (Rubric)
+                </a>
+                <a href="/instructor/exercise/{{ exercise.exercise_id }}/submissions/export" class="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium transition-colors shadow-sm flex items-center gap-2">
+                    <span>📥</span> ส่งออกเป็น CSV
+                </a>
+            </div>
+        </div>
+
+        <!-- Metrics Overview -->
+        {% set total_subs = submissions | length %}
+        {% set passed_subs = submissions | selectattr("passed", "equalto", true) | list | length %}
+        {% set pass_rate = (passed_subs / total_subs * 100) | round(1) if total_subs > 0 else 0 %}
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div class="bg-white border rounded-xl p-5 shadow-sm">
+                <p class="text-xs text-gray-500 font-medium uppercase tracking-wider">จำนวนการส่งทั้งหมด</p>
+                <p class="text-3xl font-semibold text-gray-800 mt-2">{{ total_subs }}</p>
+            </div>
+            <div class="bg-white border rounded-xl p-5 shadow-sm">
+                <p class="text-xs text-gray-500 font-medium uppercase tracking-wider">ผ่านเกณฑ์ (Pass)</p>
+                <p class="text-3xl font-semibold text-emerald-600 mt-2">{{ passed_subs }}</p>
+            </div>
+            <div class="bg-white border rounded-xl p-5 shadow-sm">
+                <p class="text-xs text-gray-500 font-medium uppercase tracking-wider">อัตราการผ่าน</p>
+                <p class="text-3xl font-semibold text-indigo-600 mt-2">{{ pass_rate }}%</p>
+            </div>
+            <div class="bg-white border rounded-xl p-5 shadow-sm">
+                <p class="text-xs text-gray-500 font-medium uppercase tracking-wider">เกณฑ์ผ่านขั้นต่ำ</p>
+                <p class="text-3xl font-semibold text-gray-700 mt-2">{{ exercise.passing_score or 60 }} คะแนน</p>
+            </div>
+        </div>
+
+        <!-- Submissions Table -->
+        <div class="bg-white border rounded-xl shadow-sm overflow-hidden">
+            <div class="px-6 py-4 border-b bg-gray-50 flex items-center justify-between">
+                <h2 class="text-sm font-medium text-gray-700">ประวัติการส่งงานรายบุคคล ({{ total_subs }} รายการ)</h2>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm text-gray-600">
+                    <thead class="bg-gray-100 text-xs text-gray-700 uppercase tracking-wider">
+                        <tr>
+                            <th class="px-6 py-3">รหัสนักศึกษา</th>
+                            <th class="px-6 py-3">ชื่อ-นามสกุล / Username</th>
+                            <th class="px-6 py-3">ครั้งที่</th>
+                            <th class="px-6 py-3">คะแนน</th>
+                            <th class="px-6 py-3">ร้อยละ</th>
+                            <th class="px-6 py-3">สถานะ</th>
+                            <th class="px-6 py-3">เวลาที่ส่ง</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200">
+                        {% for sub in submissions %}
+                        <tr class="hover:bg-gray-50 transition-colors">
+                            <td class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">
+                                {{ sub.member_id or "-" }}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <span class="font-medium text-gray-800">{{ sub.full_name or sub.username or "-" }}</span>
+                                {% if sub.username and sub.full_name %}
+                                <span class="text-xs text-gray-400 block">@{{ sub.username }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <span class="px-2.5 py-1 bg-gray-100 text-gray-700 text-xs rounded-full">#{{ sub.attempt_number or 1 }}</span>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900">
+                                {{ sub.score }} / {{ sub.max_score }}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                {{ sub.percentage }}%
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                {% if sub.passed %}
+                                <span class="px-2.5 py-1 text-xs font-medium rounded-full bg-emerald-100 text-emerald-800">
+                                    ผ่านเกณฑ์
+                                </span>
+                                {% else %}
+                                <span class="px-2.5 py-1 text-xs font-medium rounded-full bg-rose-100 text-rose-800">
+                                    ไม่ผ่าน
+                                </span>
+                                {% endif %}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-xs text-gray-500">
+                                {{ sub.submitted_at[:19].replace('T', ' ') if sub.submitted_at else '-' }}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="7" class="px-6 py-12 text-center text-gray-400">
+                                ยังไม่มีนักศึกษาส่งแบบฝึกหัดนี้
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% include "component/footer.html" %}
+</body>
+</html>

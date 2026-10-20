@@ -140,7 +140,14 @@
                 </tr>
                 {% for exercise in exercises %}
                 <tr class="border-t">
-                    <td class="px-4 py-3 text-left text-gray-800 whitespace-nowrap">{{ exercise.title }}</td>
+                    <td class="px-4 py-3 text-left text-gray-800 whitespace-nowrap">
+                        <div class="flex items-center gap-2">
+                            <span>{{ exercise.title }}</span>
+                            {% if exercise.has_grading %}
+                            <span class="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-medium">Auto-Grade</span>
+                            {% endif %}
+                        </div>
+                    </td>
                     <td class="px-4 py-3 text-left text-gray-800 whitespace-nowrap">{{ exercise.description }}</td>
                     {% if exercise.status == "available" %}
                     <td class="text-center whitespace-nowrap"><span class="text-xs px-3 py-1.5 rounded-full bg-green-600 text-white">เปิดอยู่</span></td>
@@ -148,7 +155,9 @@
                     <td class="text-center whitespace-nowrap"><span class="text-xs px-3 py-1.5 rounded-full bg-red-600 text-white">ปิดอยู่</span></td>
                     {% endif %}
                     <td class="px-4 py-3 text-right">
-                        <div class="flex justify-end gap-2">
+                        <div class="flex justify-end gap-2 items-center">
+                            <a href="/instructor/exercise/{{ exercise.exercise_id }}/rubric" class="text-xs px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-colors duration-200 rounded-xl font-medium">เกณฑ์ตรวจ</a>
+                            <a href="/instructor/exercise/{{ exercise.exercise_id }}/submissions" class="text-xs px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors duration-200 rounded-xl font-medium">สมุดคะแนน</a>
                             {% if exercise.status != "failed" and not ex %}
                             <form method="POST" action="/instructor/instance/create" class="inline">
                                 <input type="hidden" name="exercise_id" value="{{ exercise.exercise_id }}">

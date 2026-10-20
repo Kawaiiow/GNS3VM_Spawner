@@ -51,6 +51,14 @@ def table_specs(settings):
             "pk": "exercise_id",
             "gsis": {"InstructorIdIndex": "instructor_id"},
         },
+        {
+            "name": settings.submissions_table_name,
+            "pk": "submission_id",
+            "gsis": {
+                "ExerciseIdIndex": "exercise_id",
+                "UserIdIndex": "user_id",
+            },
+        },
     ]
 
 

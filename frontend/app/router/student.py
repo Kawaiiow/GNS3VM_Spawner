@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request, Form, status
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import RedirectResponse, HTMLResponse
+from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse
 from dotenv import load_dotenv
 import httpx, os
 
@@ -75,3 +75,52 @@ def handle_student_delete_instance(request: Request, instance_id: str = Form(...
     if response.status_code != 200:
         return HTMLResponse("<script>alert('ไม่สามารถลบเครื่องนี้ได้');location.href='/dashboard';</script>")
     return RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/instance/grade")
+async def handle_student_grade_instance(request: Request):
+    try:
+        body = await request.json()
+        instance_id = body.get("instance_id")
+        if not instance_id:
+            return JSONResponse(status_code=400, content={"status": "error", "message": "Missing instance_id"})
+        response = httpx.post(
+            f"{BACKEND_URL}/instances/{instance_id}/grade",
+            cookies={"access_token": request.cookies.get("access_token", "")},
+            timeout=190.0,
+        )
+        return JSONResponse(status_code=response.status_code, content=response.json())
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"status": "error", "message": f"ไม่สามารถติดต่อระบบตรวจข้อสอบได้: {str(e)}"})
+
+
+@router.post("/instance/submit")
+async def handle_student_submit_instance(request: Request):
+    try:
+        body = await request.json()
+        instance_id = body.get("instance_id")
+        if not instance_id:
+            return JSONResponse(status_code=400, content={"status": "error", "message": "Missing instance_id"})
+        response = httpx.post(
+            f"{BACKEND_URL}/instances/{instance_id}/submit",
+            cookies={"access_token": request.cookies.get("access_token", "")},
+            timeout=190.0,
+        )
+        return JSONResponse(status_code=response.status_code, content=response.json())
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"status": "error", "message": f"ไม่สามารถส่งแบบฝึกหัดได้: {str(e)}"})
+
+
+@router.get("/submissions/my")
+def handle_student_my_submissions(request: Request, exercise_id: str = None):
+    try:
+        params = {"exercise_id": exercise_id} if exercise_id else {}
+        response = httpx.get(
+            f"{BACKEND_URL}/submissions/my",
+            params=params,
+            cookies={"access_token": request.cookies.get("access_token", "")},
+            timeout=10.0,
+        )
+        return JSONResponse(status_code=response.status_code, content=response.json())
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})

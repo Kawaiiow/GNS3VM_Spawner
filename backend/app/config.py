@@ -85,7 +85,12 @@ class Settings(BaseSettings):
     users_table_name: str = "netlab_users"
     instances_table_name: str = "netlab_instances"
     exercises_table_name: str = "netlab_exercises"
+    submissions_table_name: str = "netlab_submissions"
     dynamodb_endpoint_url: Optional[str] = None
+
+    # Automated Grader Config
+    grader_timeout_seconds: int = 180
+    rubrics_prefix: str = "rubrics"
 
     # S3 สำหรับเก็บ Snapshot แบบฝึกหัด (ไฟล์ .gns3project ที่ export จาก GNS3)
     # bucket ต้องเป็น private; VM นักศึกษาดาวน์โหลดผ่าน presigned URL อายุสั้นเท่านั้น

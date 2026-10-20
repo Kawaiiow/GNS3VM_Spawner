@@ -61,6 +61,18 @@ def build_image_key(kind: str, filename: str) -> str:
     return f"{prefix}/{name}" if prefix else name
 
 
+def build_rubric_key(exercise_id: str) -> str:
+    """key ของไฟล์ rubric.json สำหรับแบบฝึกหัด"""
+    prefix = get_settings().rubrics_prefix.strip("/")
+    name = f"{exercise_id}/rubric.json"
+    return f"{prefix}/{name}" if prefix else name
+
+
+def build_runner_key() -> str:
+    """key ของไฟล์ runner.py ใน S3 สำหรับส่งให้ VM ดาวน์โหลด"""
+    return "_system/grader/runner.py"
+
+
 def object_exists(key: str) -> bool:
     """เช็คว่ามีไฟล์นี้ใน S3 จริงไหม"""
     try:
@@ -85,6 +97,19 @@ def upload_file(path: str, key: str) -> None:
 
 def put_bytes(data: bytes, key: str, content_type: str = "application/json") -> None:
     get_s3_client().put_object(Bucket=_bucket(), Key=key, Body=data, ContentType=content_type)
+
+
+def put_text(text: str, key: str, content_type: str = "application/json") -> None:
+    put_bytes(text.encode("utf-8"), key, content_type=content_type)
+
+
+def get_bytes(key: str) -> bytes:
+    """อ่านข้อมูล byte จาก S3 object"""
+    try:
+        resp = get_s3_client().get_object(Bucket=_bucket(), Key=key)
+        return resp["Body"].read()
+    except ClientError as e:
+        raise HTTPException(status_code=404, detail=f"S3 object '{key}' not found: {e}")
 
 
 def presign_get(key: str, expires: Optional[int] = None) -> str:

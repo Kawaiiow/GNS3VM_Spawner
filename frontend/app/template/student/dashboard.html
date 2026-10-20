@@ -136,6 +136,16 @@
                     </form>
                     {% endif %}
                 </div>
+                {% if ex.state == "running" %}
+                <div class="mt-3 pt-3 border-t flex gap-2">
+                    <button type="button" onclick="runGrader('practice', '{{ ex.instance_id }}')" class="w-full bg-indigo-600 hover:bg-indigo-700 transition-colors duration-200 text-white text-sm px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 font-medium shadow-sm">
+                        <span>🔍</span> ตรวจผลแล็บ (Check Lab)
+                    </button>
+                    <button type="button" onclick="runGrader('submit', '{{ ex.instance_id }}')" class="w-full bg-blue-600 hover:bg-blue-700 transition-colors duration-200 text-white text-sm px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 font-medium shadow-sm">
+                        <span>📋</span> ส่งงาน (Submit)
+                    </button>
+                </div>
+                {% endif %}
                 {% endif %}
             </div>
         </div>
@@ -175,6 +185,185 @@
             </table>
         </div>
     </div>
+
+    <!-- Grader Results Modal -->
+    <div id="grader-modal" class="fixed inset-0 bg-gray-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <!-- Modal Header -->
+            <div class="px-6 py-4 border-b flex items-center justify-between bg-gray-50">
+                <div class="flex items-center gap-2">
+                    <span id="modal-icon" class="text-xl">🔍</span>
+                    <h3 id="modal-title" class="text-lg font-semibold text-gray-800">ผลการตรวจแบบฝึกหัด (Lab Grader)</h3>
+                </div>
+                <button type="button" onclick="closeGraderModal()" class="text-gray-400 hover:text-gray-600 text-xl font-semibold leading-none">&times;</button>
+            </div>
+
+            <!-- Modal Body -->
+            <div id="modal-content" class="p-6 overflow-y-auto space-y-4 flex-1">
+                <!-- Loading State -->
+                <div id="grader-loading" class="py-12 text-center space-y-4">
+                    <div class="inline-block animate-spin rounded-full h-12 w-12 border-4 border-indigo-600 border-t-transparent"></div>
+                    <p class="text-gray-700 font-medium text-base">กำลังเชื่อมต่อไปยังอุปกรณ์ใน GNS3 VM เพื่อตรวจแบบฝึกหัด...</p>
+                    <p class="text-gray-400 text-xs">ระบบกำลังเชื่อมต่อ Telnet console และทดสอบคำสั่งตามเกณฑ์ที่กำหนด (อาจใช้เวลา 10-30 วินาที)</p>
+                </div>
+
+                <!-- Results State -->
+                <div id="grader-result" class="hidden space-y-6">
+                    <!-- Score Banner -->
+                    <div id="score-banner" class="p-5 rounded-2xl border flex items-center justify-between">
+                        <div>
+                            <span id="score-badge" class="text-xs px-2.5 py-1 rounded-full font-semibold uppercase">ผ่านเกณฑ์</span>
+                            <div class="text-3xl font-bold mt-2 text-gray-800">
+                                <span id="earned-score">0</span> <span class="text-lg font-normal text-gray-500">/ <span id="max-score">100</span> คะแนน</span>
+                            </div>
+                            <p id="submission-notice" class="text-xs text-gray-500 mt-1"></p>
+                        </div>
+                        <div class="text-right">
+                            <span id="score-percentage" class="text-4xl font-extrabold text-indigo-600">0%</span>
+                        </div>
+                    </div>
+
+                    <!-- Progress Bar -->
+                    <div class="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                        <div id="score-bar" class="h-full bg-indigo-600 rounded-full transition-all duration-500" style="width: 0%"></div>
+                    </div>
+
+                    <!-- Tasks List -->
+                    <div>
+                        <h4 class="text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wider">รายละเอียดผลการตรวจรายข้อ</h4>
+                        <div id="tasks-list" class="space-y-3"></div>
+                    </div>
+                </div>
+
+                <!-- Error State -->
+                <div id="grader-error" class="hidden py-8 text-center space-y-3">
+                    <span class="text-4xl">⚠️</span>
+                    <p id="error-message" class="text-rose-600 font-medium text-base"></p>
+                    <p class="text-gray-500 text-xs">หากโหนดใน GNS3 ยังไม่เริ่มทำงาน กรุณาเปิดโปรเจ็คแล้วกดปุ่ม Start All Nodes ให้เรียบร้อยก่อนกดตรวจ</p>
+                </div>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="px-6 py-3 border-t bg-gray-50 flex justify-end">
+                <button type="button" onclick="closeGraderModal()" class="px-5 py-2 bg-gray-800 hover:bg-gray-900 text-white text-sm rounded-xl transition-colors font-medium">
+                    ปิดหน้าต่าง
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    async function runGrader(mode, instanceId) {
+        if (mode === 'submit') {
+            if (!confirm('ยืนยันการส่งแบบฝึกหัดเป็นทางการใช่หรือไม่?\\nผลคะแนนจะถูกบันทึกเป็นสถิติในสมุดคะแนนของอาจารย์')) {
+                return;
+            }
+        }
+
+        const modal = document.getElementById('grader-modal');
+        const loading = document.getElementById('grader-loading');
+        const result = document.getElementById('grader-result');
+        const errorDiv = document.getElementById('grader-error');
+        const modalTitle = document.getElementById('modal-title');
+
+        modalTitle.textContent = mode === 'submit' ? 'ส่งแบบฝึกหัด (Official Submission)' : 'ตรวจผลแบบฝึกหัด (Practice Check)';
+        modal.classList.remove('hidden');
+        loading.classList.remove('hidden');
+        result.classList.add('hidden');
+        errorDiv.classList.add('hidden');
+
+        try {
+            const endpoint = mode === 'submit' ? '/instance/submit' : '/instance/grade';
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({instance_id: instanceId})
+            });
+            const data = await res.json();
+            loading.classList.add('hidden');
+
+            if (!res.ok || data.status === 'error') {
+                errorDiv.classList.remove('hidden');
+                document.getElementById('error-message').textContent = data.message || 'เกิดข้อผิดพลาดในการตรวจแบบฝึกหัด';
+                return;
+            }
+
+            result.classList.remove('hidden');
+            document.getElementById('earned-score').textContent = data.score;
+            document.getElementById('max-score').textContent = data.max_score;
+            document.getElementById('score-percentage').textContent = data.percentage + '%';
+
+            const scoreBar = document.getElementById('score-bar');
+            scoreBar.style.width = data.percentage + '%';
+
+            const badge = document.getElementById('score-badge');
+            const banner = document.getElementById('score-banner');
+            if (data.passed) {
+                badge.className = 'text-xs px-2.5 py-1 rounded-full font-semibold uppercase bg-emerald-100 text-emerald-800';
+                badge.textContent = 'ผ่านเกณฑ์ (Pass)';
+                banner.className = 'p-5 rounded-2xl border border-emerald-200 bg-emerald-50/50 flex items-center justify-between';
+                scoreBar.className = 'h-full bg-emerald-600 rounded-full transition-all duration-500';
+            } else {
+                badge.className = 'text-xs px-2.5 py-1 rounded-full font-semibold uppercase bg-rose-100 text-rose-800';
+                badge.textContent = 'ยังไม่ผ่าน (Need Improvement)';
+                banner.className = 'p-5 rounded-2xl border border-rose-200 bg-rose-50/50 flex items-center justify-between';
+                scoreBar.className = 'h-full bg-rose-500 rounded-full transition-all duration-500';
+            }
+
+            const notice = document.getElementById('submission-notice');
+            if (mode === 'submit' && data.submission_id) {
+                notice.textContent = `✓ บันทึกผลคะแนนอย่างเป็นทางการแล้ว (ครั้งที่ ${data.attempt_number || 1})`;
+            } else {
+                notice.textContent = '💡 โหมดทดสอบ: คะแนนนี้ยังไม่ถูกบันทึก สามารถปรับแก้คอนฟิกแล้วกดตรวจใหม่ได้';
+            }
+
+            const tasksContainer = document.getElementById('tasks-list');
+            tasksContainer.innerHTML = '';
+
+            (data.tasks || []).forEach(task => {
+                const isPass = task.status === 'passed';
+                const card = document.createElement('div');
+                card.className = `p-4 rounded-xl border ${isPass ? 'border-emerald-200 bg-emerald-50/30' : 'border-rose-200 bg-rose-50/30'}`;
+
+                let checksHtml = '';
+                (task.checks || []).forEach(c => {
+                    checksHtml += `
+                        <div class="mt-2 text-xs flex items-start gap-2 text-gray-700">
+                            <span class="${c.passed ? 'text-emerald-600 font-bold' : 'text-rose-600 font-bold'}">${c.passed ? '✓' : '✗'}</span>
+                            <div class="flex-1">
+                                <span>${c.description || c.type}</span>
+                                ${c.hint ? `<p class="text-amber-700 font-medium mt-0.5">คำใบ้: ${c.hint}</p>` : ''}
+                            </div>
+                        </div>
+                    `;
+                });
+
+                card.innerHTML = `
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <span class="text-base">${isPass ? '🟢' : '🔴'}</span>
+                            <span class="font-medium text-sm text-gray-800">${task.name} (${task.node})</span>
+                        </div>
+                        <span class="text-xs font-semibold ${isPass ? 'text-emerald-700' : 'text-rose-700'}">
+                            ${task.points} / ${task.max_points} คะแนน
+                        </span>
+                    </div>
+                    ${checksHtml ? `<div class="pt-2 border-t border-gray-200/60 mt-2">${checksHtml}</div>` : ''}
+                `;
+                tasksContainer.appendChild(card);
+            });
+
+        } catch (e) {
+            loading.classList.add('hidden');
+            errorDiv.classList.remove('hidden');
+            document.getElementById('error-message').textContent = 'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้: ' + e;
+        }
+    }
+
+    function closeGraderModal() {
+        document.getElementById('grader-modal').classList.add('hidden');
+    }
+    </script>
     {% include "component/footer.html" %}
 </body>
 </html>
