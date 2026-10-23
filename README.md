@@ -1,5 +1,5 @@
 <p align="center">
-    <img width=1000 height=auto src="frontend/app/static/image/netlab_wallpaper.png">
+    <img width=1000 height=auto src="/netlab_wallpaper.png">
 </p>
 
 # NetLab
