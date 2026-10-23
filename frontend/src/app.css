@@ -1,0 +1,22 @@
+@import 'tailwindcss';
+
+@font-face {
+    font-family: LineSeed;
+    src: url('/font/LINESeedSansTH_W_Bd.woff2');
+}
+
+@theme {
+    --font-sans: 'LineSeed', sans-serif;
+}
+
+@layer base {
+    *,
+    ::after,
+    ::before {
+        border-color: var(--color-gray-200);
+    }
+
+    button:not(:disabled) {
+        cursor: pointer;
+    }
+}
