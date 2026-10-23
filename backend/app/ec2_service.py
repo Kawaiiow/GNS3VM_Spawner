@@ -441,6 +441,10 @@ def launch_instance(
             "Name": settings.instance_profile_name
         }
 
+    # ระบุ subnet ให้ VM อยู่ AZ/subnet ที่กำหนด (เช่น us-east-1c) แทนที่ AWS เลือกเอง
+    if settings.default_subnet_id:
+        run_instances_kwargs["SubnetId"] = settings.default_subnet_id
+
     # รหัสผ่าน GNS3 เฉพาะ VM เครื่องนี้ (ตั้งผ่าน UserData ตอน first boot)
     gns3_user: Optional[str] = None
     gns3_password: Optional[str] = None
@@ -1068,6 +1072,8 @@ def launch_builder_instance(
     )
     if settings.instance_profile_name:
         kwargs["IamInstanceProfile"] = {"Name": settings.instance_profile_name}
+    if settings.default_subnet_id:
+        kwargs["SubnetId"] = settings.default_subnet_id
 
     try:
         resp = client.run_instances(**kwargs)

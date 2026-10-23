@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     default_instance_type: str = "t2.micro"
     default_key_name: str          # ชื่อ EC2 Key Pair ที่สร้างไว้ใน AWS Console
     default_security_group_id: str  # SG ที่เปิด port ที่ GNS3 ต้องใช้ (เช่น 80, 443, 3080, VNC range)
+    # Subnet ที่ใช้สร้าง VM นักศึกษา (Terraform ใส่ให้: public subnet ใน us-east-1c ของ VPC 10.0.0.0/16)
+    # ต้องอยู่ VPC เดียวกับ default_security_group_id; ว่าง = AWS เลือก default VPC/subnet เอง (พฤติกรรมเดิม)
+    default_subnet_id: Optional[str] = None
 
     # >>> LEARNER LAB ONLY <<<
     # ชื่อ IAM Role สำหรับแนบเป็น instance profile ตอน launch instance (ถ้า GNS3 VM

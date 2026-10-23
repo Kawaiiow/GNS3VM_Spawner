@@ -52,6 +52,7 @@ resource "aws_launch_template" "backend" {
     lab_instance_type = var.lab_instance_type
     key_name          = var.key_name
     lab_sg_id         = aws_security_group.gns3_vm.id
+    lab_subnet_id     = aws_subnet.lab.id
     instance_profile  = data.aws_iam_instance_profile.lab.name
     max_instances     = var.max_concurrent_instances
     users_table       = aws_dynamodb_table.users.name
@@ -120,7 +121,12 @@ resource "aws_autoscaling_group" "backend" {
     propagate_at_launch = true
   }
 
-  depends_on = [aws_lb_listener.public_backend]
+  depends_on = [
+      aws_lb_listener.public_backend,
+    aws_route_table_association.web,
+    aws_route_table_association.lab,
+    aws_internet_gateway.main,
+    ]
 }
 
 # ---------------------------------------------------------------------------
@@ -206,7 +212,9 @@ resource "aws_autoscaling_group" "frontend" {
   depends_on = [
     aws_lb_listener.public_http,
     aws_lb_listener.public_https,
-  ]
+    aws_route_table_association.web,
+    aws_internet_gateway.main,
+    ]
 }
 
 # ตอน destroy: เรียก API ของ web (admin login -> POST /admin/instances/terminate-all)

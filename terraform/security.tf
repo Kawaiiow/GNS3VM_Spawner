@@ -9,7 +9,7 @@
 resource "aws_security_group" "alb" {
   name        = "${var.project}-tf-alb-sg"
   description = "NetLab public ALB (HTTP 80, HTTPS 443, backend 8000)"
-  vpc_id      = data.aws_vpc.default.id
+  vpc_id      = aws_vpc.main.id
 
   ingress {
     description = "HTTP from internet"
@@ -49,7 +49,7 @@ resource "aws_security_group" "alb" {
 resource "aws_security_group" "frontend" {
   name        = "${var.project}-tf-frontend-sg"
   description = "NetLab frontend (8080 from ALB, SSH admin)"
-  vpc_id      = data.aws_vpc.default.id
+  vpc_id      = aws_vpc.main.id
 
   ingress {
     description     = "Frontend from public ALB"
@@ -79,7 +79,7 @@ resource "aws_security_group" "frontend" {
 resource "aws_security_group" "backend" {
   name        = "${var.project}-tf-backend-sg"
   description = "NetLab backend (8000 from ALB, SSH admin)"
-  vpc_id      = data.aws_vpc.default.id
+  vpc_id      = aws_vpc.main.id
 
   ingress {
     description     = "Backend API from public ALB"
@@ -110,7 +110,7 @@ resource "aws_security_group" "backend" {
 resource "aws_security_group" "gns3_vm" {
   name        = "${var.project}-tf-gns3-vm-sg"
   description = "NetLab GNS3 VM - 3080, 5900-5999, ssh admin"
-  vpc_id      = data.aws_vpc.default.id
+  vpc_id      = aws_vpc.main.id
 
   ingress {
     description = "GNS3 server"
