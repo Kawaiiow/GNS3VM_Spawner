@@ -160,3 +160,20 @@ variable "gns3_export_include_images" {
   type    = bool
   default = true
 }
+variable "vpc_cidr" {
+  description = "CIDR ของ VPC ที่ Terraform สร้างและจัดการ"
+  type        = string
+  default     = "10.0.0.0/16"
+}
+
+variable "lab_az" {
+  description = "AZ ที่ backend ใช้สร้าง EC2 (GNS3 VM นักศึกษา) ต้องไม่ซ้ำกับ AZ ของเครื่อง web"
+  type        = string
+  default     = "us-east-1c"
+}
+
+variable "lab_subnet_cidr" {
+  description = "CIDR ของ public subnet สำหรับ VM นักศึกษา (อยู่ใน vpc_cidr)"
+  type        = string
+  default     = "10.0.2.0/24"
+}

@@ -47,3 +47,16 @@ output "gns3_vm_sg_id" {
 output "snapshots_bucket" {
   value = data.aws_s3_bucket.snapshots.id
 }
+
+output "vpc_id" {
+  value = aws_vpc.main.id
+}
+
+output "lab_subnet_id" {
+  description = "Subnet ที่ backend ใช้สร้าง VM นักศึกษา (DEFAULT_SUBNET_ID)"
+  value       = aws_subnet.lab.id
+}
+
+output "lab_az" {
+  value = aws_subnet.lab.availability_zone
+}

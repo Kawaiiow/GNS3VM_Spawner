@@ -23,6 +23,7 @@ DEFAULT_AMI_ID=${ami_id}
 DEFAULT_INSTANCE_TYPE=${lab_instance_type}
 DEFAULT_KEY_NAME=${key_name}
 DEFAULT_SECURITY_GROUP_ID=${lab_sg_id}
+DEFAULT_SUBNET_ID=${lab_subnet_id}
 INSTANCE_PROFILE_NAME=${instance_profile}
 MAX_CONCURRENT_INSTANCES=${max_instances}
 USERS_TABLE_NAME=${users_table}

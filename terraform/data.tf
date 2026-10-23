@@ -1,25 +1,5 @@
-# backend เรียก run_instances โดยไม่ระบุ SubnetId -> VM นักศึกษาจะไปอยู่ใน default VPC (AWS เลือก AZ ให้เอง)
-# ดังนั้นทุกอย่างต้องอยู่ใน default VPC เดียวกัน (SG ข้าม VPC ไม่ได้)
-data "aws_vpc" "default" {
-  default = true
-}
-
-data "aws_subnets" "default" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.default.id]
-  }
-  filter {
-    name   = "default-for-az"
-    values = ["true"]
-  }
-}
-
-# อ่านว่า subnet แต่ละตัวอยู่ AZ ไหน เพื่อเลือก subnet ให้ครบ var.az_count AZ (ไม่ซ้ำ AZ)
-data "aws_subnet" "default" {
-  for_each = toset(data.aws_subnets.default.ids)
-  id       = each.value
-}
+# VPC / subnet / IGW / route table ถูกสร้างและจัดการใน vpc.tf (VPC 10.0.0.0/16)
+# backend ระบุ SubnetId (DEFAULT_SUBNET_ID) ให้ VM นักศึกษาเสมอ จึงไม่พึ่ง default VPC อีกต่อไป
 
 data "aws_iam_instance_profile" "lab" {
   name = "LabInstanceProfile"
@@ -53,10 +33,7 @@ data "aws_ami_ids" "gns3" {
 locals {
   gns3_ami_id = var.base_ami_id != "" ? var.base_ami_id : try(data.aws_ami_ids.gns3.ids[0], "")
 
-  # AZ -> subnet id (default VPC มี 1 default subnet ต่อ 1 AZ)
-  subnet_by_az = { for s in data.aws_subnet.default : s.availability_zone => s.id }
-
-  # เลือก AZ แรกๆ ตามลำดับตัวอักษร จำนวน az_count แล้วใช้ร่วมกันทั้ง ALB และ ASG
-  app_azs     = slice(sort(keys(local.subnet_by_az)), 0, var.az_count)
-  app_subnets = [for az in local.app_azs : local.subnet_by_az[az]]
+  # AZ และ subnet ของเครื่อง web/ALB มาจาก vpc.tf (public1 = AZ แรก, public2 = AZ ที่สอง ฯลฯ)
+  app_azs     = local.web_azs
+  app_subnets = [for az in local.app_azs : aws_subnet.web[az].id]
 }

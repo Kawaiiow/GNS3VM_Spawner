@@ -43,9 +43,10 @@ Terraform ชุดนี้สร้างโครงสร้างสำห�
 | `ec2.tf` | Launch Template + Auto Scaling Group ของ Frontend และ Backend (กระจาย AZ, health check แบบ ELB, rolling refresh), `random_password` สำหรับ JWT secret, และตัว cleanup VM ตอน destroy |
 | `user_data_backend.sh.tpl`, `user_data_frontend.sh.tpl` | ติดตั้ง Docker, `git clone` repo ตาม `repo_branch`, `docker build` แล้ว `docker run` (backend เขียน `backend/.env` และสร้าง admin คนแรกจากเครื่องใน AZ แรกเท่านั้น) |
 
-หมายเหตุ: ทุกอย่างอยู่ใน **default VPC** เพราะ backend เรียก `run_instances` โดยไม่ระบุ subnet
-VM นักศึกษาจะไปอยู่ใน default VPC เสมอ จึงต้องใช้ Security Group ใน VPC เดียวกัน
-เครื่อง Frontend/Backend อยู่ใน default subnet (มี public IP ในตัว) จึง **ไม่ต้องใช้ NAT Gateway** (ประหยัด credit) โดยล็อก Security Group ให้รับเฉพาะจาก ALB
+หมายเหตุ: Terraform สร้าง VPC `10.0.0.0/16` + IGW + public route table เอง (`vpc.tf`)
+- เครื่อง Frontend/Backend/ALB อยู่ `public1` (10.0.0.0/24) และ `public2` (10.0.1.0/24) ใน 2 AZ แรก (ไม่รวม `lab_az`)
+- VM นักศึกษาที่ API สร้างถูกบังคับให้อยู่ subnet `public-lab` (10.0.2.0/24) ใน `lab_az` (default `us-east-1c`) ผ่าน `DEFAULT_SUBNET_ID` ที่ Terraform ส่งให้ backend
+- ทุก subnet เป็น public (auto-assign public IP) จึง **ไม่ต้องใช้ NAT Gateway** (ประหยัด credit) โดยล็อก Security Group ให้รับเฉพาะจาก ALB
 
 ## สิ่งที่ต้องมีก่อนเริ่ม
 

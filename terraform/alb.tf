@@ -18,7 +18,7 @@ resource "aws_lb_target_group" "frontend" {
   port                 = 8080
   protocol             = "HTTP"
   target_type          = "instance"
-  vpc_id               = data.aws_vpc.default.id
+  vpc_id               = aws_vpc.main.id
   deregistration_delay = 30
 
   health_check {
@@ -124,7 +124,7 @@ resource "aws_lb_target_group" "backend" {
   port                 = 8000
   protocol             = "HTTP"
   target_type          = "instance"
-  vpc_id               = data.aws_vpc.default.id
+  vpc_id               = aws_vpc.main.id
   deregistration_delay = 30
 
   health_check {
