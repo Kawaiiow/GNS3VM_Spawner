@@ -16,6 +16,9 @@ cd /opt/app
 
 docker build -t netlab-frontend ./frontend
 docker run -d --name frontend --restart unless-stopped \
-  -e BACKEND_URL=${backend_url} -p 8080:8080 netlab-frontend
+  -e BACKEND_URL=${backend_url} \
+  -e PROTOCOL_HEADER=x-forwarded-proto \
+  -e HOST_HEADER=x-forwarded-host \
+  -p 8080:8080 netlab-frontend
 
 rm -f /var/lib/cloud/instances/*/user-data.txt* /var/lib/cloud/instances/*/scripts/* || true
