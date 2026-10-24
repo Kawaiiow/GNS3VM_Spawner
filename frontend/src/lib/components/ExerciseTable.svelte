@@ -1,9 +1,17 @@
 <script>
     import { enhance } from '$app/forms';
+    import { refreshAll } from '$app/navigation';
     import { confirmed } from '#lib/confirm.js';
     import Button from './Button.svelte';
 
     let { exercises, busy, deletable = false } = $props();
+
+    $effect(() => {
+        const timer = setInterval(() => {
+            if (!document.hidden) refreshAll();
+        }, 3000);
+        return () => clearInterval(timer);
+    });
 </script>
 
 <div class="bg-white border rounded-lg overflow-x-auto shadow-xs">

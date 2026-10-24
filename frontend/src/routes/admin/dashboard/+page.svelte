@@ -1,9 +1,17 @@
 <script>
     import { enhance } from '$app/forms';
+    import { refreshAll } from '$app/navigation';
     import { confirmed } from '#lib/confirm.js';
     import Button from '#lib/components/Button.svelte';
 
     let { data } = $props();
+
+    $effect(() => {
+        const timer = setInterval(() => {
+            if (!document.hidden) refreshAll();
+        }, 5000);
+        return () => clearInterval(timer);
+    });
 
     const badges = {
         running: ['bg-green-600', 'ใช้งานอยู่'],
