@@ -18,18 +18,7 @@ NetLab ช่วยให้ผู้เรียนขอสร้าง GNS3 V
 
 ## สถาปัตยกรรม
 
-```
-Internet ──► ALB สาธารณะ (HTTPS :443) ──► Frontend ASG (SvelteKit + Bun, :8080)
-                                                │ BACKEND_URL (เรียกจากฝั่ง server)
-                                                ▼
-                                       ALB ภายใน (:8000) ──► Backend ASG (FastAPI, JWT)
-                                                                   │ boto3
-                              ┌────────────────┬───────────────────┼───────────────┐
-                              ▼                ▼                   ▼               ▼
-                          DynamoDB        S3 (snapshots)     EC2 API ──► GNS3 VM นักศึกษา
-                                                                              ▲
-                                       EventBridge ──► Lambda auto-stop ──────┘ (หยุด VM ที่หมดเวลา)
-```
+![netlab architecture](netlab_architecture.png)
 
 รายละเอียดการ Deploy และรายการทรัพยากรทั้งหมดอยู่ใน [terraform/README.md](terraform/README.md)
 
