@@ -1,6 +1,4 @@
-<p align="center">
-    <img width="1000" src="netlab_wallpaper.png">
-</p>
+![](image/netlab_wallpaper.png)
 
 # NetLab
 
@@ -18,7 +16,7 @@ NetLab ช่วยให้ผู้เรียนขอสร้าง GNS3 V
 
 ## สถาปัตยกรรม
 
-![netlab architecture](netlab_architecture.png)
+![](image/netlab_architecture.png)
 
 รายละเอียดการ Deploy และรายการทรัพยากรทั้งหมดอยู่ใน [terraform/README.md](terraform/README.md)
 
