@@ -62,7 +62,7 @@ Several pages poll the backend so state stays current without a manual reload:
 
 - `InstanceCard`: every 3 seconds, only while an instance is starting or waiting for a public IP.
 - `ExerciseTable`: every 3 seconds while the tab is visible.
-- Admin dashboard: every 5 seconds while the tab is visible.
+- `Admin dashboard`: every 3 seconds while the tab is visible.
 
 ## Project structure
 

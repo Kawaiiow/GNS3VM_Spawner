@@ -9,7 +9,7 @@
     $effect(() => {
         const timer = setInterval(() => {
             if (!document.hidden) refreshAll();
-        }, 5000);
+        }, 3000);
         return () => clearInterval(timer);
     });
 
