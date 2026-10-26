@@ -109,6 +109,7 @@ cp terraform.tfvars.example terraform.tfvars   # Windows: copy terraform.tfvars.
 
 แก้ `terraform.tfvars` ตาม example:
 โดยใส่
+```bash
 > admin_cidr = "เลขอะไรก็ได้"
 > repo_url = "https://github.com/Kawaiiow/GNS3VM_Spawner.git"
 > repo_branch  = "main"
@@ -116,6 +117,7 @@ cp terraform.tfvars.example terraform.tfvars   # Windows: copy terraform.tfvars.
 > admin_password      = "xxxxx"  #รหัสสำหรับ username admin
 > redirect_http_to_https = true # redirect HTTP (80) -> HTTPS (443) อัตโนมัติ
 > max_concurrent_instances = "มากสุดตามต้องการ" #แต่ Leaner Lab Max ที่ 9
+```
 
 ### 4) รัน Terraform
 
