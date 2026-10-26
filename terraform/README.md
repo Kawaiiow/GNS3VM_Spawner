@@ -67,10 +67,9 @@ Terraform ชุดนี้สร้างโครงสร้างสำห�
 
 ```bash
 cd backend
-python scripts/bootstrap_aws.py          # สร้าง SG/key pair สำหรับ builder
 python scripts/build_gns3_ami.py         # พิมพ์ AMI ID ตอนจบ
 ```
-
+และนำค่า AMI ID ที่ได้ไปใส่ใน .env
 ถ้ามี AMI ที่เพื่อนแชร์ให้แล้ว ให้ copy เข้าบัญชีตัวเองแทน: `python scripts/bootstrap_aws.py --copy-ami ami-xxxx`
 
 ### 2) ตั้งค่า AWS credentials 
@@ -100,9 +99,6 @@ export $(grep -E '^(AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|AW
 
 > credentials หมดอายุเมื่อ session จบ (~4 ชม.) ต้องอัปเดตค่าใน `backend/.env` ใหม่ทุกครั้งที่เปิด Lab
 > แล้วรันคำสั่งโหลดด้านบนซ้ำ (ตัวแปรที่โหลดไว้อยู่แค่ใน terminal ที่เปิดอยู่ ปิดแล้วหาย)
->
-> ห้าม commit `backend/.env` และห้ามคัดลอกไปวางบน EC2: เครื่อง EC2 ใช้ Instance Profile แทน
-> (ดูหัวข้อ "backend/.env บนเครื่อง EC2")
 
 ### 3) ตั้งค่าตัวแปร
 
@@ -112,8 +108,14 @@ cp terraform.tfvars.example terraform.tfvars   # Windows: copy terraform.tfvars.
 ```
 
 แก้ `terraform.tfvars` ตาม example:
-
-ถ้า repo เป็น **private** (repo นี้เป็น public จึงข้ามได้) ให้ตั้ง `TF_VAR_github_token` ก่อน apply (ดูหัวข้อ [Repo แบบ private](#repo-แบบ-private-github-token))
+โดยใส่
+> admin_cidr = "เลขอะไรก็ได้"
+> repo_url = "https://github.com/Kawaiiow/GNS3VM_Spawner.git"
+> repo_branch  = "main"
+> expose_backend_port = true/false # เปิดหรือปิดให้คนเข้า backend
+> admin_password      = "xxxxx"  #รหัสสำหรับ username admin
+> redirect_http_to_https = true # redirect HTTP (80) -> HTTPS (443) อัตโนมัติ
+> max_concurrent_instances = "มากสุดตามต้องการ" #แต่ Leaner Lab Max ที่ 9
 
 ### 4) รัน Terraform
 
@@ -147,117 +149,6 @@ terraform apply
 
 เปิด `web_url` ในเบราว์เซอร์ แล้ว login ด้วย admin ที่สร้างไว้ (ถ้า login ไม่ได้ในช่วงแรก รอให้ backend ทั้ง 2 ตัว healthy ก่อน)
 
-## Repo แบบ private (GitHub token)
-
-เครื่อง EC2 เริ่มต้นเปล่า ต้อง `git clone` โค้ดจาก GitHub เอง ถ้า repo เป็น private ต้องมี token ที่อ่าน repo ได้
-
-### สร้าง token (ไม่จำเป็นต้องเป็นเจ้าของ repo)
-
-| วิธี | เงื่อนไข |
-|---|---|
-| **Fine-grained token** (Repository access: เฉพาะ repo นี้, Contents: **Read-only**) | ปลอดภัยที่สุด แต่ repo ต้องเป็นของคุณหรือ organization ที่อนุญาต ถ้าเป็น repo ส่วนตัวของคนอื่นต้องให้เจ้าของ/admin สร้างให้ |
-| **Classic token** (scope `repo`) | ใช้กับ repo ที่คุณเข้าถึงได้ แต่ token อ่าน/เขียนได้ **ทุก private repo ที่คุณเข้าถึง** ถ้า repo อยู่ใน organization ที่เปิด SSO ต้องกด Authorize token กับ organization นั้นด้วย |
-
-ตั้งวันหมดอายุสั้น (เช่น 7 วัน) และ **revoke หลัง deploy เสร็จ**
-
-### ใช้กับ Terraform
-
-ตั้งผ่าน environment variable (ไม่ต้องเขียนลงไฟล์ `terraform.tfvars`):
-
-```powershell
-# Windows PowerShell
-$env:TF_VAR_github_token="github_pat_xxxxxxxx"
-```
-
-```bash
-# macOS / Linux
-export TF_VAR_github_token="github_pat_xxxxxxxx"
-```
-
-แล้ว `terraform apply` ตามปกติ โดย `repo_url` ยังเป็น URL ธรรมดา (`https://github.com/<owner>/<repo>.git`) และต้องเป็น `https://` เท่านั้น
-ถ้าใส่ token ลงใน `repo_url` ตรงๆ Terraform จะแจ้ง error ให้ใช้ `github_token` แทน
-
-### Terraform ทำอะไรกับ token
-
-- ตัวแปร `github_token` เป็น `sensitive` จึงไม่ถูกพิมพ์ใน `plan`/`apply`
-- ฝัง token ลงใน URL เฉพาะคำสั่ง `git clone` ตอน boot และ **ปิด `set -x` ระหว่าง clone** เพื่อไม่ให้ token โผล่ใน `/var/log/cloud-init-output.log`
-- หลัง clone เสร็จ **เปลี่ยน `origin` กลับเป็น URL ไม่มี token** (`/opt/app/.git/config` สะอาด)
-- ลบสำเนา user-data บนดิสก์ของเครื่อง (`/var/lib/cloud/instances/*/user-data.txt*` และ `scripts/*`)
-
-### สิ่งที่ยังเหลืออยู่ (ลดความเสี่ยงได้ ไม่ได้หายไปหมด)
-
-- **`terraform.tfstate`** เก็บ token เป็นข้อความธรรมดา
-- **user_data ใน instance metadata** ผู้ที่มีสิทธิ์ดู attribute ของเครื่องหรือเข้าเครื่องได้ จะอ่านได้
-- ดังนั้นควรใช้ token สิทธิ์ read-only วันหมดอายุสั้น และ revoke เมื่อ deploy เสร็จ ห้ามแชร์ไฟล์ state
-
-### อัปเดตโค้ด (repo private)
-
-ในโครงสร้างที่มีหลายเครื่อง ไม่แนะนำให้ `git pull` ทีละเครื่อง ให้ใช้ instance refresh ตามหัวข้อ [อัปเดตโค้ด / ทดสอบ branch อื่น](#อัปเดตโค้ด--ทดสอบ-branch-อื่น)
-โดยตั้ง `TF_VAR_github_token` ให้ใช้ได้ตอน `terraform apply` (เครื่องใหม่จะ clone ด้วย token ที่ฝังใน user_data)
-
-## backend/.env บนเครื่อง EC2
-
-`user_data` สร้างไฟล์ `/opt/app/backend/.env` ให้เองตอน boot ครั้งแรก
-ไฟล์นี้ **ไม่ได้มาจาก Git** (`.env` ถูก ignore) ดังนั้นไม่ต้องคัดลอก `backend/.env.example` ไปวางบนเครื่อง
-`.env.example` ใช้เป็นแม่แบบสำหรับรันบนเครื่องตัวเองเท่านั้น
-
-| ตัวแปรใน `.env` | ค่ามาจาก |
-|---|---|
-| `AWS_REGION` | `region` |
-| `DEFAULT_AMI_ID` | `base_ami_id` (ว่าง = AMI `netlab-gns3-base*` ล่าสุด) |
-| `DEFAULT_INSTANCE_TYPE` | `lab_instance_type` |
-| `DEFAULT_KEY_NAME` | `key_name` |
-| `DEFAULT_SECURITY_GROUP_ID` | `netlab-tf-gns3-vm-sg` ที่ Terraform สร้าง |
-| `INSTANCE_PROFILE_NAME` | `LabInstanceProfile` |
-| `MAX_CONCURRENT_INSTANCES` | `max_concurrent_instances` |
-| `USERS_TABLE_NAME`, `INSTANCES_TABLE_NAME`, `EXERCISES_TABLE_NAME` | ชื่อตาราง DynamoDB ที่ Terraform สร้าง |
-| `SNAPSHOTS_BUCKET`, `SNAPSHOTS_PREFIX` | bucket ใน `s3.tf` และ `exercises` |
-| `JWT_SECRET_KEY` | `random_password` ของ Terraform (ค่าเดียวกันทุกเครื่อง backend จึง login ข้ามเครื่องได้) เก็บอยู่ใน `terraform.tfstate` ห้ามแชร์ไฟล์ state |
-
-ข้อสำคัญ:
-
-- **ไม่ใส่** `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` เพราะ boto3 ใช้ `LabInstanceProfile` ของเครื่อง
-  (ถ้าก๊อป `.env` จากเครื่องตัวเองที่มี key หมดอายุไปวาง backend จะใช้ key นั้นแล้วล้ม `ExpiredToken`)
-- ตัวแปรที่ไม่ได้อยู่ในตาราง (`SNAPSHOT_URL_EXPIRES`, `GNS3_API_PORT`, `GNS3_PREFER_PRIVATE_IP`, `GNS3_EXPORT_TIMEOUT`) ใช้ค่าเริ่มต้นจาก `config.py`
-- `.env` ของเครื่องตัวเอง (dev) กับบน EC2 เป็นคนละไฟล์ อย่าใช้ปนกัน: dev ใช้ `bootstrap_aws.py` สร้าง SG/key pair ชุดของตัวเอง
-  ส่วนบน EC2 ใช้ชุดที่ Terraform สร้าง
-
-แก้ค่าหลัง deploy แบบชั่วคราว (ต้องทำ **ทุกเครื่อง backend** ไม่งั้นแต่ละเครื่องจะใช้ค่าไม่ตรงกัน):
-
-```bash
-ssh -i <labsuser.pem> ec2-user@<public-ip-ของเครื่อง-backend>
-nano /opt/app/backend/.env
-docker rm -f backend
-docker run -d --name backend --restart unless-stopped --env-file /opt/app/backend/.env -p 8000:8000 netlab-backend
-```
-
-> วิธีที่ถูกต้องคือแก้ผ่าน Terraform (`terraform.tfvars`) แล้ว `terraform apply` user_data เปลี่ยน -> ASG ทำ rolling refresh
-> เปลี่ยนเครื่องให้ทีละตัว ข้อมูลใน DynamoDB/S3 ไม่หาย ทุกเครื่องได้ค่าตรงกัน
-
-## ตัวแปรที่ปรับได้ (`variables.tf`)
-
-| ตัวแปร | ค่าเริ่มต้น | หมายเหตุ |
-|---|---|---|
-| `admin_cidr` | (ต้องกรอก) | IP สำหรับ SSH เช่น `1.2.3.4/32` |
-| `repo_url` | (ต้องกรอก) | HTTPS URL ของ repo (ห้ามฝัง token) |
-| `github_token` | `""` | token อ่าน repo private (sensitive) ตั้งผ่าน `TF_VAR_github_token` |
-| `repo_branch` | `main` | |
-| `region` | `us-east-1` | Learner Lab ใช้ได้เฉพาะบาง region |
-| `project` | `netlab` | prefix ของชื่อ resource |
-| `base_ami_id` | `""` | ว่าง = ใช้ `netlab-gns3-base*` ล่าสุดในบัญชี |
-| `key_name` | `vockey` | key pair ที่มีอยู่แล้ว ใช้ทั้งเครื่อง frontend/backend และ VM นักศึกษา (ถ้าใช้ `gns3-cloud-keypair` จาก `bootstrap_aws.py` ให้ตั้งค่านี้ และเก็บไฟล์ `.pem` ไว้ ห้าม commit) |
-| `frontend_instance_type`, `backend_instance_type` | `t3.small` | ชนิดเครื่อง frontend / backend (ต่อ 1 เครื่อง) |
-| `frontend_count`, `backend_count` | `2` | จำนวนเครื่องในแต่ละ ASG (ขนาดคงที่ กระจายตาม AZ) ตั้งน้อยกว่า 2 จะไม่ทน AZ ล่ม |
-| `az_count` | `2` | จำนวน AZ ที่ใช้ (2-4) เลือก AZ แรกๆ ตามตัวอักษรของ default VPC |
-| `health_check_grace_period` | `600` | วินาทีที่ ASG รอก่อนเริ่มนับ health check ของเครื่องใหม่ ต้องนานกว่าเวลา build |
-| `alb_idle_timeout` | `600` | idle timeout ของ ALB (ค่าเริ่มต้นของ AWS คือ 60 ซึ่งสั้นกว่าตอน start VM ~150 วินาที) |
-| `lab_instance_type` | `t3.medium` | ชนิด VM นักศึกษา (`DEFAULT_INSTANCE_TYPE`) `.env.example` ตั้งเป็น `t2.micro` เพื่อประหยัด credit แต่ RAM 1 GB มักไม่พอรัน GNS3 หลาย node |
-| `max_concurrent_instances` | `3` | จำกัดจำนวน VM พร้อมกัน (กัน credit หมด) |
-| `expose_backend_port` | `false` | เปิด 8000 บน ALB สาธารณะเฉพาะ `admin_cidr` ให้ `terraform destroy` เรียก API ลบ VM/AMI (ถ้าปิดจะใช้ aws CLI fallback) เบราว์เซอร์ไม่ต้องเข้า backend เพราะ frontend เรียกจากฝั่ง server |
-| `certificate_arn` | `""` | ARN ของ SSL/TLS Certificate ใน ACM (ถ้าเว้นว่างไว้ ระบบจะสร้าง self-signed cert และ import เข้า ACM ให้อัตโนมัติ) |
-| `ssl_policy` | `ELBSecurityPolicy-TLS13-1-2-2021-06` | SSL Policy สำหรับ HTTPS Listener บน ALB |
-| `redirect_http_to_https` | `true` | เปลี่ยนเส้นทาง HTTP (พอร์ต 80) ไปยัง HTTPS (พอร์ต 443) อัตโนมัติ |
-| `users_table`, `instances_table`, `exercises_table` | `netlab_*` | ชื่อตาราง DynamoDB |
 
 ## การใช้งานหลัง deploy
 
@@ -280,29 +171,9 @@ user_data รันแค่ตอนเครื่อง boot ครั้ง�
    ```
    (ชื่อ ASG ดูได้จาก output `backend_asg_name` / `frontend_asg_name`)
 
-ดู log (SSH เข้าเครื่องหนึ่งตัว ดู IP ได้ใน EC2 Console):
-
-```bash
-ssh -i <labsuser.pem> ec2-user@<public-ip-ของเครื่อง>
-docker logs -f backend      # เครื่อง backend
-docker logs -f frontend     # เครื่อง frontend
-```
 
 เมื่อ Learner Lab หยุด EC2 จะถูก stop และเมื่อ Start Lab ใหม่ container จะกลับมาเอง (`--restart unless-stopped`)
 ทางเข้าเว็บคือ DNS ของ ALB ซึ่งคงเดิมตราบที่ ALB ไม่ถูกลบ
-
-## ทดสอบว่า HA ทำงานจริง
-
-1. เปิด `web_url` แล้ว login ให้เรียบร้อย
-2. EC2 Console → Instances เลือกเครื่อง `netlab-frontend` ตัวหนึ่ง (หรือ `netlab-backend`) → **Terminate**
-3. รีเฟรชหน้าเว็บต่อเนื่อง: ต้องยังใช้งานได้ (ALB ส่งไปเครื่องอีก AZ) และอยู่ในระบบอยู่ไม่หลุด (JWT ใช้ secret เดียวกัน)
-4. ใน Target Groups จะเห็นเครื่องเก่า unhealthy/หายไป แล้ว ASG สร้างเครื่องใหม่ทดแทนภายในไม่กี่นาที
-5. ทดสอบระดับ AZ: Terminate ทั้ง 2 เครื่องของฝั่งเดียวกันที่อยู่ AZ เดียวกัน เว็บต้องยังตอบจากอีก AZ
-
-ข้อจำกัดที่ควรเขียนในรายงาน:
-- GNS3 VM ที่ API สร้างไม่ได้สำรอง ถ้า AZ ล่ม VM ใน AZ นั้นหาย (ตั้งใจให้เป็นแบบนี้)
-- มีการเข้ารหัส SSL/TLS บนพอร์ต 443 ผ่าน ALB (หากไม่มี custom domain บน ACM สามารถปล่อยว่าง `certificate_arn` เพื่อให้ Terraform สร้าง self-signed certificate และ import เข้า ACM ให้อัตโนมัติ โดยเบราว์เซอร์จะแสดงคำเตือน Self-signed certificate)
-- ALB 2 ตัว (สาธารณะ + ภายใน) คิดค่าบริการรายชั่วโมงตลอดเวลาที่เปิดอยู่ ควร `terraform destroy` เมื่อไม่ใช้
 
 ## ลบทั้งหมด (`terraform destroy`)
 
@@ -338,24 +209,3 @@ bucket S3 ตั้ง `force_destroy = true` จึงลบพร้อมไ�
 | ตารางมีอยู่แล้ว (`ResourceInUseException`) | เคยรัน `init_dynamodb.py` ไว้ ลบตารางเดิมก่อน หรือเปลี่ยนชื่อผ่าน `users_table` ฯลฯ |
 | `SecurityGroup ... already exists` | ชื่อซ้ำกับของเดิมใน default VPC ลบอันเก่าหรือเปลี่ยน `project` |
 
-## ย้ายจากโครงสร้างเดิม (EC2 เครื่องเดียว + Elastic IP)
-
-ถ้าเคย `terraform apply` ด้วยเวอร์ชันเดิมไว้ ควร **`terraform destroy` ด้วยโค้ดเวอร์ชันเดิมก่อน** แล้วค่อย apply ชุดนี้ เพราะ Security Group และ resource cleanup เปลี่ยนชื่อ/โครงสร้างทั้งหมด
-(ตาราง DynamoDB ที่มีอยู่แล้วจะถูก import กลับมาเอง ผ่าน `ddb_exists.py` ข้อมูลผู้ใช้ไม่หาย ถ้าไม่ได้ลบตาราง)
-
-## ข้อควรระวัง
-
-- **ห้าม commit** `terraform.tfvars`, `*.tfstate`, `.terraform/` ให้เพิ่มใน `.gitignore`:
-
-  ```
-  terraform/.terraform/
-  terraform/*.tfstate*
-  terraform/terraform.tfvars
-  backend/.env
-  *.pem
-  ```
-
-- **State เก็บในเครื่อง (local)** หาย = Terraform จำ resource ไม่ได้ ควรสำรองไฟล์ `terraform.tfstate`
-- **ค่าใช้จ่าย** หักจาก credit ของ Lab: เครื่อง frontend + backend อย่างละ 2 เครื่อง, ALB 2 ตัว (คิดรายชั่วโมงตลอดที่เปิด) และ VM นักศึกษา ปรับ `frontend_count`/`backend_count`, `max_concurrent_instances` และ `lab_instance_type` ให้เหมาะกับงบ และ `terraform destroy` เมื่อไม่ใช้
-- `JWT_SECRET_KEY` มาจาก `random_password` ใน Terraform (ค่าเดียวกันทุกเครื่อง backend) จึงอยู่ใน `terraform.tfstate` เหมือน `admin_password`
-- ค่า `INSTANCE_PROFILE_NAME` ใช้ `LabInstanceProfile` ซึ่งต้องมีสิทธิ์ `iam:PassRole` เพื่อแนบให้ VM นักศึกษา (ปกติ Learner Lab อนุญาต)
