@@ -1,22 +1,15 @@
-#admin_cidr  = "27.145.145.69/32" #ไม่ค่อยจำเป็น Connect เข้าไปดูในเว็บได้ <require placeholder ip>
-#repo_url    = "https://github.com/<owner>/GNS3VM_Spawner.git"   # repo public ไม่ต้องตั้ง github_token ห้ามใส่ token ในบรรทัดนี้ <require>
-#repo_branch = "main"    # ปกติใช้ main ถ้าจะทดสอบ branch อื่นให้เปลี่ยนเป็นชื่อ branch นั้น แล้ว terraform apply ใหม่ (ASG จะทยอยเปลี่ยนเครื่องให้) <require>
-#admin_password = "....." # ใช้สร้าง admin คนแรก <require>
+admin_cidr  = "27.145.145.69/32" #ไม่ค่อยจำเป็น Connect เข้าไปดูในเว็บได้ <require placeholder ip>
+repo_url    = "https://github.com/Kawaiiow/GNS3VM_Spawner.git"   # repo public ไม่ต้องตั้ง github_token ห้ามใส่ token ในบรรทัดนี้ <require>
+repo_branch = "main"    # ปกติใช้ main ถ้าจะทดสอบ branch อื่นให้เปลี่ยนเป็นชื่อ branch นั้น แล้ว terraform apply ใหม่ (ASG จะทยอยเปลี่ยนเครื่องให้) <require>
+admin_password = "....." # ใช้สร้าง admin คนแรก <require>
+redirect_http_to_https = true # redirect HTTP (80) -> HTTPS (443) อัตโนมัติ
+max_concurrent_instances = ตามต้องการ
+# expose_backend_port = true
 
-# --- High availability (ค่าเริ่มต้นใช้ได้เลย ไม่ต้องใส่) ---
+(ค่าเริ่มต้นใช้ได้เลย ไม่ต้องลบ # ออก) ---
 # az_count                = 2          # จำนวน AZ ที่ใช้ (2-4)
 # frontend_count          = 2          # จำนวนเครื่อง frontend (กระจายตาม AZ)
 # backend_count           = 2          # จำนวนเครื่อง backend (กระจายตาม AZ)
 # frontend_instance_type  = "t3.small"
 # backend_instance_type   = "t3.small"
-# max_concurrent_instances = ตามต้องการ
-# expose_backend_port = true   # เปิด 8000 บน ALB เฉพาะ admin_cidr ให้ terraform destroy เรียก API ลบ VM/AMI <optional>
 # certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" # ว่างไว้ = สร้าง self-signed cert และ import เข้า ACM อัตโนมัติ
-# redirect_http_to_https = true # redirect HTTP (80) -> HTTPS (443) อัตโนมัติ
-
-# base_ami_id = "ami-xxxxxxxxxxxxxxxxx"   # ว่างไว้ = ใช้ netlab-gns3-base* ล่าสุดในบัญชี
-# key_name    = "vockey"
-# lab_instance_type = "t3.medium"
-
-# github_token: ต้องใช้เฉพาะ repo private (repo นี้ public ข้ามได้) ตั้งผ่าน environment แทนการเขียนลงไฟล์นี้
-#   PowerShell: $env:TF_VAR_github_token="XXXXXX"   |   bash: export TF_VAR_github_token=...
